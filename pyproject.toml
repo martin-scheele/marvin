@@ -1,0 +1,6 @@
+[tool.basedpyright]
+reportExplicitAny = false
+reportAny = false
+
+[tool.ruff]
+line-length = 120
