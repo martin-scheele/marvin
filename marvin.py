@@ -184,7 +184,7 @@ def assemble(tuples: list[tuple[Any, ...]], verbose: bool):
             bArg1 = reg2bin[args[0]]
             val = int(args[1])
             if (val < 0):
-                val = val * -1
+                val = -val
                 val = val | 1 << 15
             bArg2, bArg3 = val >> 8, val & ~(0xFF << 8),
         elif opcode in {"calln", "jeqzn", "jnezn"}:
@@ -201,7 +201,7 @@ def assemble(tuples: list[tuple[Any, ...]], verbose: bool):
             bArg1 = reg2bin[args[0]] << 4 | reg2bin[args[1]]
             val = int(args[2])
             if (val < 0):
-                val = val * -1
+                val = -val
                 val = val | 1 << 15
             bArg2, bArg3 = val >> 8, val & ~(0xFF << 8),
 
@@ -346,7 +346,7 @@ def simulate(machineCodes: list[int]):
             arg2 = code & 0xFFFF
             if ((arg2 & 0b1 << 15) >> 15):
                 arg2 = arg2 & ~(0b1 << 15)
-                arg2 = arg2 * -1
+                arg2 = -arg2
             reg[arg1] += arg2
             pc += 1
         # calln
@@ -372,7 +372,7 @@ def simulate(machineCodes: list[int]):
             arg3 = code & 0xFFFF
             if ((arg3 & 0b1 << 15) >> 15):
                 arg3 = arg3 & ~(0b1 << 15)
-                arg3 = arg3 * -1
+                arg3 = -arg3
             reg[arg1] = mem[reg[arg2] + arg3]
             pc += 1
         # setn
@@ -381,7 +381,7 @@ def simulate(machineCodes: list[int]):
             arg2 = code & 0xFFFF
             if ((arg2 & 0b1 << 15) >> 15):
                 arg2 = arg2 & ~(0b1 << 15)
-                arg2 = arg2 * -1
+                arg2 = -arg2
             reg[arg1] = arg2
             pc += 1
         # storen
@@ -391,7 +391,7 @@ def simulate(machineCodes: list[int]):
             arg3 = code & 0xFFFF
             if ((arg3 & 0b1 << 15) >> 15):
                 arg3 = arg3 & ~(0b1 << 15)
-                arg3 = arg3 * -1
+                arg3 = -arg3
             mem[reg[arg2] + arg3] = reg[arg1]
             pc += 1
         # add
