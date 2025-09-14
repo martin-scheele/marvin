@@ -163,7 +163,7 @@ def main(argv: list[str]):
 
 # Assembles the instructions in tuples and returns a list containing the corresponding machine
 # codes. Prints the assembled instructions to stdout if verbose is True.
-def assemble(tuples: list[tuple[Any, ...]], verbose: bool):
+def assemble(tuples: list[tuple[Any, ...]], verbose: bool) -> list[int]:
     machineCodes: list[int] = []
     verboseOutput: list[str] =  []
 
@@ -270,7 +270,9 @@ def simulate(machineCodes: list[int]):
             while True:
                 try:
                     x = int(input())
-                    break
+                    if (validNum(x)):
+                        break
+                    raise ValueError
                 except ValueError:
                     print("Illegal input: number must be in [-32768, 32767]")
             reg[arg1] = x
