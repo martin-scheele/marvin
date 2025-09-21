@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
+import os
+import sys
+import argparse
+from typing import Any
 
-"""
-Usage: %(script_name)s [-v] <.marv file>
-
+description = """
 This program serves as an emulator for a register-based machine called Marvin (named after
 the paranoid android character, Marvin, from The Hitchhiker's Guide to the Galaxy by 
 Douglas Adams). The design of the machine was inspired by that of the Harvey Mudd 
@@ -11,10 +13,6 @@ as input, assembles and simulates the instructions within, and prints any output
 Any input to the .marv program is via stdin. If the optional -v argument is specified, 
 the emulator prints the assembled instructions to stdout before simulating them.
 """
-
-import os
-import sys
-from typing import Any
 
 # Maps opcodes to their binary 8-bit codes.
 opcode2bin = {
@@ -39,29 +37,29 @@ reg2bin = {
 }
 
 def main(argv: list[str]):
-    assert(__doc__ is not None)
     verbose: bool = False
     debug: bool = False
     inFile: str
 
     # Process command-line inputs and exit if they are not as expected.
-    if len(argv) == 2:
-        inFile = argv[1]
-    elif len(argv) == 3:
-        if argv[1] != "-v":
-            sys.exit(f"Error: unkown argument {argv[1]}\n" + \
-                     __doc__ % {"script_name": argv[0].split("/")[-1]})
-        verbose = argv[1] == "-v"
-        inFile = argv[2]
-    else:
-        sys.exit(__doc__ % {"script_name": argv[0].split("/")[-1]})
-    if not inFile.endswith(".marv") or not os.path.exists(inFile):
-        sys.exit(f"Error: invalid file '{inFile}'\n" + \
-                 __doc__ % {"script_name": argv[0].split("/")[-1]})
+    parser = argparse.ArgumentParser(prog="Marvin+", description=description)
+    _ = parser.add_argument("filename", help="input .marv file")
+    _ = parser.add_argument("-v", "--verbose", action="store_true", help="enable verbose output")
+    _ = parser.add_argument("-d", "--debug", action="store_true", help="enable debug mode")
+    args = parser.parse_args()
 
-    fh = open(inFile, "r")
-    lines = fh.readlines()
+    inFile = args.filename
+    verbose = args.verbose
+    debug = args.debug
+
+    if not inFile.endswith(".marv") or not os.path.exists(inFile):
+        sys.exit(f"Error: invalid file '{inFile}'")
+
+    with open(inFile, "r") as fh:
+        lines = fh.readlines()
+
     expectedID = 0
+    # TODO: fix typing?
     tuples: list[tuple[Any, ...]] = []
 
     for i, line in enumerate(lines):
