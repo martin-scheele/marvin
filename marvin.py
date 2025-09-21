@@ -31,8 +31,9 @@ bin2opcode = {opcode2bin[opcode]: opcode for opcode in opcode2bin.keys()}
 
 # Maps register names to their binary 4-bit codes.
 reg2bin = {
-    "r0":  0b0000, "r1":  0b0001, "r2":  0b0010, "r3":  0b0011, "r4":  0b0100, "r5":  0b0101,
-    "r6":  0b0110, "r7":  0b0111, "r8":  0b1000, "r9":  0b1001, "r10": 0b1010, "r11": 0b1011,
+    "r0":  0b0000, "r1":  0b0001, "r2":  0b0010, "r3":  0b0011, 
+    "r4":  0b0100, "r5":  0b0101, "r6":  0b0110, "r7":  0b0111, 
+    "r8":  0b1000, "r9":  0b1001, "r10": 0b1010, "r11": 0b1011,
     "r12": 0b1100, "r13": 0b1101, "r14": 0b1110, "r15": 0b1111
 }
 
@@ -42,7 +43,7 @@ def main(argv: list[str]):
     inFile: str
 
     # Process command-line inputs and exit if they are not as expected.
-    parser = argparse.ArgumentParser(prog="Marvin+", description=description)
+    parser = argparse.ArgumentParser(prog="marvin", description=description)
     _ = parser.add_argument("filename", help="input .marv file")
     _ = parser.add_argument("-v", "--verbose", action="store_true", help="enable verbose output")
     _ = parser.add_argument("-d", "--debug", action="store_true", help="enable debug mode")
@@ -85,6 +86,7 @@ def main(argv: list[str]):
         expectedID += 1
 
         # Validate the instruction arguments.
+        # TODO: is there a cleaner way to do this validation?
         id, opcode, args = int(toks[0]), toks[1], toks[2:]
         if opcode in {"halt", "nop"}:
             if len(args) != 0:
@@ -170,6 +172,7 @@ def assemble(tuples: list[tuple[Any, ...]], verbose: bool) -> list[int]:
         id, opcode, args = t[1], t[2], t[3:]
         bArg1, bArg2, bArg3 = 0, 0, 0
 
+        # TODO: is there a cleaner way to do this?
         if opcode in {"halt", "nop"}:
             bArg1, bArg2, bArg3 = 0, 0, 0
         elif opcode in {"jumpr", "read", "set0", "set1", "write"}:
@@ -209,6 +212,7 @@ def assemble(tuples: list[tuple[Any, ...]], verbose: bool) -> list[int]:
         machineCodes.append(code)
 
         if verbose:
+            # TODO: ...again, is there a cleaner way to do this?
             aArg1, aArg2, aArg3 = "", "", ""
             if opcode in {"jumpn", "jumpr", "read", "set0", "set1", "write"}:
                 aArg1 = args[0]
@@ -264,6 +268,8 @@ def simulate(machineCodes: list[int], debug: bool):
 
         # Debug stub
         if debug:
+            # TODO: actually have a function here
+            # - args: mem, reg, code, pc
             print(f"pc: {pc} opcode: {opcode}")
             print(f"r0:  {reg[0]: 10d} r1:  {reg[1]: 10d} r2:  {reg[2]: 10d} r3:  {reg[3]: 10d}")
             print(f"r4:  {reg[4]: 10d} r5:  {reg[5]: 10d} r6:  {reg[6]: 10d} r7:  {reg[7]: 10d}")
@@ -278,6 +284,9 @@ def simulate(machineCodes: list[int], debug: bool):
             _ = input()
 
         # Simulation the instruction given by opcode.
+
+        # TODO: dict of funcs like HMMM
+        # - args: mem, reg, pc, code (make global?)
 
         # halt
         if opcode == "halt":
