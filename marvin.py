@@ -41,6 +41,7 @@ reg2bin = {
 def main(argv: list[str]):
     assert(__doc__ is not None)
     verbose: bool = False
+    debug: bool = False
     inFile: str
 
     # Process command-line inputs and exit if they are not as expected.
@@ -159,7 +160,7 @@ def main(argv: list[str]):
 
     # Simulate the machine codes.
     if len(machineCodes) > 0:
-        simulate(machineCodes)
+        simulate(machineCodes, debug)
 
 # Assembles the instructions in tuples and returns a list containing the corresponding machine
 # codes. Prints the assembled instructions to stdout if verbose is True.
@@ -234,18 +235,21 @@ def assemble(tuples: list[tuple[Any, ...]], verbose: bool) -> list[int]:
     return machineCodes
 
 # Simulate the assembled instructions in machineCodes.
-def simulate(machineCodes: list[int]):
+def simulate(machineCodes: list[int], debug: bool):
     reg = [0] * 16     # registers
     mem = [0] * 65536  # main memory
     pc = 0             # program counter
     ir = 0             # instruction register
 
-    # Initialize the frame and stack pointers to 8192 (the base address of the stack).
-    reg[14], reg[15] = 8192, 8192
+    # Initialize the frame and stack pointers to 65535 (the base address of the stack).
+    reg[14], reg[15] = 65535, 65535
 
     # Load the machine codes into memory starting at location 0.
     for i, v in enumerate(machineCodes):
         mem[i] = v
+
+    # Find end of stack
+    stack_end = len(machineCodes)
 
     while True:
         # Fetch the next instruction to simulate.
@@ -254,10 +258,26 @@ def simulate(machineCodes: list[int]):
         except IndexError:
             sys.exit(f"Error: attempted to execute mem['{pc}']; halting the machine")
 
+
         # Extract the opcode.
         code = ir
         op = code >> 24
         opcode = bin2opcode[op]
+
+        # Debug stub
+        if debug:
+            print(f"pc: {pc} opcode: {opcode}")
+            print(f"r0:  {reg[0]: 10d} r1:  {reg[1]: 10d} r2:  {reg[2]: 10d} r3:  {reg[3]: 10d}")
+            print(f"r4:  {reg[4]: 10d} r5:  {reg[5]: 10d} r6:  {reg[6]: 10d} r7:  {reg[7]: 10d}")
+            print(f"r8:  {reg[8]: 10d} r9:  {reg[9]: 10d} r10: {reg[10]: 10d} r11: {reg[11]: 10d}")
+            print(f"r12: {reg[12]: 10d} r13: {reg[13]: 10d} r14: {reg[14]: 10d} r15: {reg[15]: 10d}")
+            for i in range(65535, reg[15] - 1, -1):
+                if i == reg[14]:
+                    print("*", end="")
+                if i == reg[15]:
+                    print("^", end="")
+                print(mem[i])
+            _ = input()
 
         # Simulation the instruction given by opcode.
 
@@ -326,15 +346,17 @@ def simulate(machineCodes: list[int]):
         elif opcode == "popr":
             arg1 = (code & 0xF << 4) >> 4
             arg2 = code & 0xF
-            reg[arg2] -= 1
+            reg[arg2] += 1
             reg[arg1] = mem[reg[arg2]]
             pc += 1
         # pushr
         elif opcode == "pushr":
+            if reg[15] == stack_end:
+                sys.exit(f"Error: stack overflow attempting to execute mem['{pc}']; halting the machine")
             arg1 = (code & 0xF << 4) >> 4
             arg2 = code & 0xF
             mem[reg[arg2]] = reg[arg1]
-            reg[arg2] += 1
+            reg[arg2] -= 1
             pc += 1
         # storer
         elif opcode == "storer":
