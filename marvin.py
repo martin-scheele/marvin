@@ -65,7 +65,7 @@ def main():
 
     for i, line in enumerate(lines):
         lineno = i + 1
-        line = line.strip()
+        line = line.strip().lower()
         # Ignore if line is empty or is a comment.
         if line == "" or line.startswith("#"):
             continue
