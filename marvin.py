@@ -34,10 +34,11 @@ reg2bin = {
     "r0":  0b0000, "r1":  0b0001, "r2":  0b0010, "r3":  0b0011, 
     "r4":  0b0100, "r5":  0b0101, "r6":  0b0110, "r7":  0b0111, 
     "r8":  0b1000, "r9":  0b1001, "r10": 0b1010, "r11": 0b1011,
-    "r12": 0b1100, "r13": 0b1101, "r14": 0b1110, "r15": 0b1111
+    "r12": 0b1100, "r13": 0b1101, "r14": 0b1110, "r15": 0b1111,
+    "ra":  0b1100, "rv":  0b1101, "fp":  0b1110, "sp":  0b1111
 }
 
-def main(argv: list[str]):
+def main():
     verbose: bool = False
     debug: bool = False
     inFile: str
@@ -60,8 +61,7 @@ def main(argv: list[str]):
         lines = fh.readlines()
 
     expectedID = 0
-    # TODO: fix typing?
-    tuples: list[tuple[Any, ...]] = []
+    tuples: list[tuple[int, int, str, *tuple[Any, ...]]] = []
 
     for i, line in enumerate(lines):
         lineno = i + 1
@@ -87,6 +87,7 @@ def main(argv: list[str]):
 
         # Validate the instruction arguments.
         # TODO: is there a cleaner way to do this validation?
+        # - don't need lineno?
         id, opcode, args = int(toks[0]), toks[1], toks[2:]
         if opcode in {"halt", "nop"}:
             if len(args) != 0:
@@ -164,9 +165,9 @@ def main(argv: list[str]):
 
 # Assembles the instructions in tuples and returns a list containing the corresponding machine
 # codes. Prints the assembled instructions to stdout if verbose is True.
-def assemble(tuples: list[tuple[Any, ...]], verbose: bool) -> list[int]:
+def assemble(tuples: list[tuple[int, int, str, *tuple[Any, ...]]], verbose: bool) -> list[int]:
     machineCodes: list[int] = []
-    verboseOutput: list[str] =  []
+    verboseOutput: list[str] = []
 
     for t in tuples:
         id, opcode, args = t[1], t[2], t[3:]
@@ -512,7 +513,7 @@ def validNum(n: int) -> bool:
 
 # Return True if s is "r" followed by a number from the interval [0, 15], and False otherwise.
 def validReg(s: str) -> bool:
-    return s in {"r" + str(i) for i in range(16)}
+    return s in reg2bin.keys()
 
 if __name__ == "__main__":
-    main(sys.argv)
+    main()
