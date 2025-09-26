@@ -2,7 +2,6 @@
 import os
 import sys
 import argparse
-from typing import Any
 
 description = """
 This program serves as an emulator for a register-based machine called Marvin (named after
@@ -39,12 +38,8 @@ reg2bin = {
 }
 
 def main():
-    verbose: bool = False
-    debug: bool = False
-    inFile: str
-
     # Process command-line inputs and exit if they are not as expected.
-    parser = argparse.ArgumentParser(prog="marvin", description=description)
+    parser = argparse.ArgumentParser(description=description)
     _ = parser.add_argument("filename", help="input .marv file")
     _ = parser.add_argument("-v", "--verbose", action="store_true", help="enable verbose output")
     _ = parser.add_argument("-d", "--debug", action="store_true", help="enable debug mode")
@@ -61,7 +56,7 @@ def main():
         lines = fh.readlines()
 
     expectedID = 0
-    tuples: list[tuple[int, int, str, *tuple[Any, ...]]] = []
+    tuples: list[tuple[int, int, str, *tuple[str, ...]]] = []
 
     for i, line in enumerate(lines):
         lineno = i + 1
@@ -86,8 +81,6 @@ def main():
         expectedID += 1
 
         # Validate the instruction arguments.
-        # TODO: is there a cleaner way to do this validation?
-        # - don't need lineno?
         id, opcode, args = int(toks[0]), toks[1], toks[2:]
         if opcode in {"halt", "nop"}:
             if len(args) != 0:
@@ -104,7 +97,7 @@ def main():
                 sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 1 argument, N")
             if not isNum(toks[2]):
                 sys.exit(f"Error {inFile}@{lineno}: invalid number '{toks[2]}'")
-            tuples.append((lineno, id, opcode, int(toks[2])))
+            tuples.append((lineno, id, opcode, toks[2]))
         elif opcode in {"copy", "loadr", "neg", "popr", "pushr", "storer"}:
             if len(args) != 2:
                 sys.exit(f"Error {inFile}@{lineno}: '{toks[1]}' expects 2 arguments, rX rY")
@@ -120,7 +113,7 @@ def main():
                 sys.exit(f"Error {inFile}@{lineno}: invalid register '{toks[2]}'")
             if not isNum(toks[3]):
                 sys.exit(f"Error {inFile}@{lineno}: invalid number '{toks[3]}'")
-            tuples.append((lineno, id, opcode, toks[2], int(toks[3])))
+            tuples.append((lineno, id, opcode, toks[2], toks[3]))
         elif opcode in {"add", "div", "mod", "mul", "sub"}:
             if len(args) != 3:
                 sys.exit(f"Error {inFile}@{lineno}: '{toks[1]}' expects 3 arguments, rX rY rZ")
@@ -140,20 +133,20 @@ def main():
                 sys.exit(f"Error {inFile}@{lineno}: invalid register '{toks[3]}'")
             if not isNum(toks[4]):
                 sys.exit(f"Error {inFile}@{lineno}: invalid number '{toks[4]}'")
-            tuples.append((lineno, id, opcode, toks[2], toks[3], int(toks[4])))
+            tuples.append((lineno, id, opcode, toks[2], toks[3], toks[4]))
 
     # Additional validation of instruction arguments.
     for t in tuples:
         lineno, id, opcode, args = t[0], t[1], t[2], t[3:]
-        if opcode in {"jumpn"} and args[0] >= len(tuples):
+        if opcode in {"jumpn"} and int(args[0]) >= len(tuples):
             sys.exit(f"Error {inFile}@{lineno}: invalid instruction address '{args[0]}'")
-        elif opcode in {"addn", "setn"} and not validNum(args[1]):
+        elif opcode in {"addn", "setn"} and not validNum(int(args[1])):
             sys.exit(f"Error {inFile}@{lineno}: invalid number '{args[1]}'")
-        elif opcode in {"loadn", "storen"} and not validNum(args[2]):
+        elif opcode in {"loadn", "storen"} and not validNum(int(args[2])):
             sys.exit(f"Error {inFile}@{lineno}: invalid address '{args[2]}'")
-        elif opcode in {"calln", "jeqzn", "jnezn"} and args[1] >= len(tuples):
+        elif opcode in {"calln", "jeqzn", "jnezn"} and int(args[1]) >= len(tuples):
             sys.exit(f"Error {inFile}@{lineno}: invalid instruction address '{args[1]}'")
-        elif opcode in {"jeqn", "jgen", "jgtn", "jlen", "jltn", "jnen"} and args[2] >= len(tuples):
+        elif opcode in {"jeqn", "jgen", "jgtn", "jlen", "jltn", "jnen"} and int(args[2]) >= len(tuples):
             sys.exit(f"Error {inFile}@{lineno}: invalid instruction address '{args[2]}'")
 
     # Assemble the instructions into machine codes.
@@ -165,7 +158,7 @@ def main():
 
 # Assembles the instructions in tuples and returns a list containing the corresponding machine
 # codes. Prints the assembled instructions to stdout if verbose is True.
-def assemble(tuples: list[tuple[int, int, str, *tuple[Any, ...]]], verbose: bool) -> list[int]:
+def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]], verbose: bool) -> list[int]:
     machineCodes: list[int] = []
     verboseOutput: list[str] = []
 
@@ -173,14 +166,13 @@ def assemble(tuples: list[tuple[int, int, str, *tuple[Any, ...]]], verbose: bool
         id, opcode, args = t[1], t[2], t[3:]
         bArg1, bArg2, bArg3 = 0, 0, 0
 
-        # TODO: is there a cleaner way to do this?
         if opcode in {"halt", "nop"}:
             bArg1, bArg2, bArg3 = 0, 0, 0
         elif opcode in {"jumpr", "read", "set0", "set1", "write"}:
             bArg1, bArg2, bArg3 = 0, 0, reg2bin[args[0]]
         elif opcode in {"jumpn"}:
             val = int(args[0])
-            bArg1, bArg2, bArg3 = 0, val >> 8, val & ~(0xFF << 8),
+            bArg1, bArg2, bArg3 = 0, val >> 8, val & 0xff
         elif opcode in {"copy", "loadr", "neg", "popr", "pushr", "storer"}:
             bArg1, bArg2, bArg3 = 0, 0, reg2bin[args[0]] << 4 | reg2bin[args[1]]
         elif opcode in {"addn", "setn"}:
@@ -189,45 +181,36 @@ def assemble(tuples: list[tuple[int, int, str, *tuple[Any, ...]]], verbose: bool
             if (val < 0):
                 val = -val
                 val = val | 1 << 15
-            bArg2, bArg3 = val >> 8, val & ~(0xFF << 8),
+            bArg2, bArg3 = val >> 8, val & 0xff
         elif opcode in {"calln", "jeqzn", "jnezn"}:
             bArg1 = reg2bin[args[0]]
             val = int(args[1])
-            bArg2, bArg3 =  val >> 8, val & ~(0xFF << 8),
+            bArg2, bArg3 =  val >> 8, val & 0xff
         elif opcode in {"add", "div", "mod", "mul", "sub"}:
             bArg1, bArg2, bArg3 = 0, reg2bin[args[0]], reg2bin[args[1]] << 4 | reg2bin[args[2]]
         elif opcode in {"jeqn", "jgen", "jgtn", "jlen", "jltn", "jnen"}:
             bArg1 = reg2bin[args[0]] << 4 | reg2bin[args[1]]
             val = int(args[2])
-            bArg2, bArg3 = val >> 8, val & ~(0xFF << 8),
+            bArg2, bArg3 = val >> 8, val & 0xff
         elif opcode in {"loadn", "storen"}:
             bArg1 = reg2bin[args[0]] << 4 | reg2bin[args[1]]
             val = int(args[2])
             if (val < 0):
                 val = -val
                 val = val | 1 << 15
-            bArg2, bArg3 = val >> 8, val & ~(0xFF << 8),
+            bArg2, bArg3 = val >> 8, val & 0xff
 
         op = opcode2bin[opcode]
         code = op << 24 | bArg1 << 16 | bArg2 << 8 | bArg3
         machineCodes.append(code)
 
         if verbose:
-            # TODO: ...again, is there a cleaner way to do this?
-            aArg1, aArg2, aArg3 = "", "", ""
-            if opcode in {"jumpn", "jumpr", "read", "set0", "set1", "write"}:
-                aArg1 = args[0]
-            elif opcode in {"addn", "setn", "calln", "copy", "jeqzn", "jnezn", "loadr", "neg", "popr", "pushr", "storer"}:
-                aArg1, aArg2 = args[0], args[1]
-            elif opcode in {"add", "div", "jeqn", "jgen", "jgtn", "jlen", "jltn", "jnen", "loadn", "mod", "mul", "storen", "sub"}:
-                aArg1, aArg2, aArg3 = args[0], args[1], args[2]
-
             bArg1 = format(bArg1, '08b')
             bArg2 = format(bArg2, '08b')
             bArg3 = format(bArg3, '08b')
 
             binCode = f"{id: >5}: {format(opcode2bin[opcode], '08b')} {bArg1} {bArg2} {bArg3}"
-            asmCode = f"{id: >5}: {opcode: <6} {aArg1} {aArg2} {aArg3}"
+            asmCode = f"{id: >5}: {opcode: <6} {" ".join(args)}"
             verboseOutput.append(f"{binCode: <50}        {asmCode}")
 
     if verbose:
@@ -294,7 +277,7 @@ def simulate(machineCodes: list[int], debug: bool):
             break
         # read
         elif opcode == "read":
-            arg1 = code & 0xF
+            arg1 = code & 0xf
             while True:
                 try:
                     x = int(input())
@@ -307,7 +290,7 @@ def simulate(machineCodes: list[int], debug: bool):
             pc += 1
         # write
         elif opcode == "write":
-            arg1 = code & 0xF
+            arg1 = code & 0xf
             print(reg[arg1])
             pc += 1
         # nop
@@ -316,44 +299,44 @@ def simulate(machineCodes: list[int], debug: bool):
             continue
         # set0
         elif opcode == "set0":
-            arg1 = code & 0xF
+            arg1 = code & 0xf
             reg[arg1] = 0
             pc += 1
         # set1
         elif opcode == "set1":
-            arg1 = code & 0xF
+            arg1 = code & 0xf
             reg[arg1] = 1
             pc += 1
         # jumpr
         elif opcode == "jumpr":
-            arg1 = code & 0xF
+            arg1 = code & 0xf
             pc = reg[arg1]
         # jumpn
         elif opcode == "jumpn":
-            arg1 = code & 0xFFFF
+            arg1 = code & 0xffff
             pc = arg1
         # copy
         elif opcode == "copy":
-            arg1 = (code & 0xF << 4) >> 4
-            arg2 = code & 0xF
+            arg1 = (code & 0xf << 4) >> 4
+            arg2 = code & 0xf
             reg[arg1] = reg[arg2]
             pc += 1
         # loadr
         elif opcode == "loadr":
-            arg1 = (code & 0xF << 4) >> 4
-            arg2 = code & 0xF
+            arg1 = (code & 0xf << 4) >> 4
+            arg2 = code & 0xf
             reg[arg1] = mem[reg[arg2]]
             pc += 1
         # neg
         elif opcode == "neg":
-            arg1 = (code & 0xF << 4) >> 4
-            arg2 = code & 0xF
+            arg1 = (code & 0xf << 4) >> 4
+            arg2 = code & 0xf
             reg[arg1] = -reg[arg2]
             pc += 1
         # popr
         elif opcode == "popr":
-            arg1 = (code & 0xF << 4) >> 4
-            arg2 = code & 0xF
+            arg1 = (code & 0xf << 4) >> 4
+            arg2 = code & 0xf
             reg[arg2] += 1
             reg[arg1] = mem[reg[arg2]]
             pc += 1
@@ -361,21 +344,21 @@ def simulate(machineCodes: list[int], debug: bool):
         elif opcode == "pushr":
             if reg[15] == stack_end:
                 sys.exit(f"Error: stack overflow attempting to execute mem['{pc}']; halting the machine")
-            arg1 = (code & 0xF << 4) >> 4
-            arg2 = code & 0xF
+            arg1 = (code & 0xf << 4) >> 4
+            arg2 = code & 0xf
             mem[reg[arg2]] = reg[arg1]
             reg[arg2] -= 1
             pc += 1
         # storer
         elif opcode == "storer":
-            arg1 = (code & 0xF << 4) >> 4
-            arg2 = code & 0xF
+            arg1 = (code & 0xf << 4) >> 4
+            arg2 = code & 0xf
             mem[reg[arg2]] = reg[arg1]
             pc += 1
         # addn
         elif opcode == "addn":
-            arg1 = (code & 0xF << 16) >> 16
-            arg2 = code & 0xFFFF
+            arg1 = (code & 0xf << 16) >> 16
+            arg2 = code & 0xffff
             if ((arg2 & 0b1 << 15) >> 15):
                 arg2 = arg2 & ~(0b1 << 15)
                 arg2 = -arg2
@@ -383,25 +366,25 @@ def simulate(machineCodes: list[int], debug: bool):
             pc += 1
         # calln
         elif opcode == "calln":
-            arg1 = (code & 0xF << 16) >> 16
-            arg2 = code & 0xFFFF
+            arg1 = (code & 0xf << 16) >> 16
+            arg2 = code & 0xffff
             reg[arg1] = pc + 1
             pc = arg2
         # jeqzn
         elif opcode == "jeqzn":
-            arg1 = (code & 0xF << 16) >> 16
-            arg2 = code & 0xFFFF
+            arg1 = (code & 0xf << 16) >> 16
+            arg2 = code & 0xffff
             pc = arg2 if reg[arg1] == 0 else pc + 1
         # jnezn
         elif opcode == "jnezn":
-            arg1 = (code & 0xF << 16) >> 16
-            arg2 = code & 0xFFFF
+            arg1 = (code & 0xf << 16) >> 16
+            arg2 = code & 0xffff
             pc = arg2 if reg[arg1] != 0 else pc + 1
         # loadn
         elif opcode == "loadn":
-            arg1 = (code & 0xF << 20) >> 20
-            arg2 = (code & 0xF << 16) >> 16
-            arg3 = code & 0xFFFF
+            arg1 = (code & 0xf << 20) >> 20
+            arg2 = (code & 0xf << 16) >> 16
+            arg3 = code & 0xffff
             if ((arg3 & 0b1 << 15) >> 15):
                 arg3 = arg3 & ~(0b1 << 15)
                 arg3 = -arg3
@@ -409,8 +392,8 @@ def simulate(machineCodes: list[int], debug: bool):
             pc += 1
         # setn
         elif opcode == "setn":
-            arg1 = (code & 0xF << 16) >> 16 
-            arg2 = code & 0xFFFF
+            arg1 = (code & 0xf << 16) >> 16 
+            arg2 = code & 0xffff
             if ((arg2 & 0b1 << 15) >> 15):
                 arg2 = arg2 & ~(0b1 << 15)
                 arg2 = -arg2
@@ -418,9 +401,9 @@ def simulate(machineCodes: list[int], debug: bool):
             pc += 1
         # storen
         elif opcode == "storen":
-            arg1 = (code & 0xF << 20) >> 20
-            arg2 = (code & 0xF << 16) >> 16
-            arg3 = code & 0xFFFF
+            arg1 = (code & 0xf << 20) >> 20
+            arg2 = (code & 0xf << 16) >> 16
+            arg3 = code & 0xffff
             if ((arg3 & 0b1 << 15) >> 15):
                 arg3 = arg3 & ~(0b1 << 15)
                 arg3 = -arg3
@@ -428,74 +411,74 @@ def simulate(machineCodes: list[int], debug: bool):
             pc += 1
         # add
         elif opcode == "add":
-            arg1 = (code & 0xF << 8) >> 8
-            arg2 = (code & 0xF << 4) >> 4 
-            arg3 = code & 0xF
+            arg1 = (code & 0xf << 8) >> 8
+            arg2 = (code & 0xf << 4) >> 4 
+            arg3 = code & 0xf
             reg[arg1] = reg[arg2] + reg[arg3]
             pc += 1
         # div
         elif opcode == "div":
-            arg1 = (code & 0xF << 8) >> 8
-            arg2 = (code & 0xF << 4) >> 4
-            arg3 = code & 0xF
+            arg1 = (code & 0xf << 8) >> 8
+            arg2 = (code & 0xf << 4) >> 4
+            arg3 = code & 0xf
             reg[arg1] = reg[arg2] // reg[arg3]
             pc += 1
         # mod
         elif opcode == "mod":
-            arg1 = (code & 0xF << 8) >> 8
-            arg2 = (code & 0xF << 4) >> 4
-            arg3 = code & 0xF
+            arg1 = (code & 0xf << 8) >> 8
+            arg2 = (code & 0xf << 4) >> 4
+            arg3 = code & 0xf
             reg[arg1] = reg[arg2] % reg[arg3]
             pc += 1
         # mul
         elif opcode == "mul":
-            arg1 = (code & 0xF << 8) >> 8
-            arg2 = (code & 0xF << 4) >> 4
-            arg3 = code & 0xF
+            arg1 = (code & 0xf << 8) >> 8
+            arg2 = (code & 0xf << 4) >> 4
+            arg3 = code & 0xf
             reg[arg1] = reg[arg2] * reg[arg3]
             pc += 1
         # sub
         elif opcode == "sub":
-            arg1 = (code & 0xF << 8) >> 8
-            arg2 = (code & 0xF << 4) >> 4
-            arg3 = code & 0xF
+            arg1 = (code & 0xf << 8) >> 8
+            arg2 = (code & 0xf << 4) >> 4
+            arg3 = code & 0xf
             reg[arg1] = reg[arg2] - reg[arg3]
             pc += 1
         # jeqn
         elif opcode == "jeqn":
-            arg1 = (code & 0xF << 20) >> 20
-            arg2 = (code & 0xF << 16) >> 16
-            arg3 = code & 0xFFFF
+            arg1 = (code & 0xf << 20) >> 20
+            arg2 = (code & 0xf << 16) >> 16
+            arg3 = code & 0xffff
             pc = arg3 if reg[arg1] == reg[arg2] else pc + 1
         # jgen
         elif opcode == "jgen":
-            arg1 = (code & 0xF << 20) >> 20
-            arg2 = (code & 0xF << 16) >> 16 
-            arg3 = code & 0xFFFF
+            arg1 = (code & 0xf << 20) >> 20
+            arg2 = (code & 0xf << 16) >> 16 
+            arg3 = code & 0xffff
             pc = arg3 if reg[arg1] >= reg[arg2] else pc + 1
         # jgtn
         elif opcode == "jgtn":
-            arg1 = (code & 0xF << 20) >> 20
-            arg2 = (code & 0xF << 16) >> 16
-            arg3 = code & 0xFFFF
+            arg1 = (code & 0xf << 20) >> 20
+            arg2 = (code & 0xf << 16) >> 16
+            arg3 = code & 0xffff
             pc = arg3 if reg[arg1] > reg[arg2] else pc + 1
         # jlen
         elif opcode == "jlen":
-            arg1 = (code & 0xF << 20) >> 20
-            arg2 = (code & 0xF << 16) >> 16
-            arg3 = code & 0xFFFF
+            arg1 = (code & 0xf << 20) >> 20
+            arg2 = (code & 0xf << 16) >> 16
+            arg3 = code & 0xffff
             pc = arg3 if reg[arg1] <= reg[arg2] else pc + 1
         # jltn
         elif opcode == "jltn":
-            arg1 = (code & 0xF << 20) >> 20
-            arg2 = (code & 0xF << 16) >> 16
-            arg3 = code & 0xFFFF
+            arg1 = (code & 0xf << 20) >> 20
+            arg2 = (code & 0xf << 16) >> 16
+            arg3 = code & 0xffff
             pc = arg3 if reg[arg1] < reg[arg2] else pc + 1
         # jnen
         elif opcode == "jnen":
-            arg1 = (code & 0xF << 20) >> 20
-            arg2 = (code & 0xF << 16) >> 16
-            arg3 = code & 0xFFFF
+            arg1 = (code & 0xf << 20) >> 20
+            arg2 = (code & 0xf << 16) >> 16
+            arg3 = code & 0xffff
             pc = arg3 if reg[arg1] != reg[arg2] else pc + 1
 
 # Returns True if s encodes an integer, and False otherwise.
