@@ -253,11 +253,11 @@ def simulate(machineCodes: list[int], debug: bool):
         # Debug stub
         if debug:
             print(f"pc: {pc} opcode: {opcode}")
-            print(f"r0:  {reg[0]: 10d} r1:  {reg[1]: 10d} r2:  {reg[2]: 10d} r3:  {reg[3]: 10d}")
-            print(f"r4:  {reg[4]: 10d} r5:  {reg[5]: 10d} r6:  {reg[6]: 10d} r7:  {reg[7]: 10d}")
-            print(f"r8:  {reg[8]: 10d} r9:  {reg[9]: 10d} r10: {reg[10]: 10d} r11: {reg[11]: 10d}")
-            print(f"r12: {reg[12]: 10d} r13: {reg[13]: 10d} r14: {reg[14]: 10d} r15: {reg[15]: 10d}")
-            for i in range(65535, reg[15] - 1, -1):
+            print(f"r0:  {tc_tc2int(reg[0]): 10d} r1:  {tc_tc2int(reg[1]): 10d} r2:  {tc_tc2int(reg[2]): 10d} r3:  {tc_tc2int(reg[3]): 10d}")
+            print(f"r4:  {tc_tc2int(reg[4]): 10d} r5:  {tc_tc2int(reg[5]): 10d} r6:  {tc_tc2int(reg[6]): 10d} r7:  {tc_tc2int(reg[7]): 10d}")
+            print(f"r8:  {tc_tc2int(reg[8]): 10d} r9:  {tc_tc2int(reg[9]): 10d} r10: {tc_tc2int(reg[10]): 10d} r11: {tc_tc2int(reg[11]): 10d}")
+            print(f"r12: {tc_tc2int(reg[12]): 10d} r13: {tc_tc2int(reg[13]): 10d} r14: {tc_tc2int(reg[14]): 10d} r15: {tc_tc2int(reg[15]): 10d}")
+            for i in range(65535, tc_tc2int(reg[15]) - 1, -1):
                 if i == reg[14]:
                     print("*", end="")
                 if i == reg[15]:
@@ -427,7 +427,7 @@ def op_div(code: int):
     arg1 = (code & 0xf << 8) >> 8
     arg2 = (code & 0xf << 4) >> 4
     arg3 = code & 0xf
-    reg[arg1] = reg[arg2] // reg[arg3]
+    reg[arg1] = tc_div(reg[arg2], reg[arg3])
     pc += 1
 
 def op_mod(code: int):
@@ -529,22 +529,21 @@ def tc_neg(val: int) -> int:
     return val ^ (1 << 31)
 
 def tc_add(val1: int, val2: int) -> int:
-    val = val1 + val2
-    return val
+    return (val1 + val2) & 0xffffffff
 
 def tc_sub(val1: int, val2: int) -> int:
-    val = val1 - val2
-    return val
+    return (val1 - val2) & 0xffffffff
 
 def tc_16b232b(val: int) -> int:
-    sign = (val & (1 << 15)) >> 15
-    return (sign << 31) & (val & 0x7fff)
+    if (val & (1 << 15)) >> 15:
+        val = val | 0xffff0000
+    return val
 
 def tc_mul(val1: int, val2: int) -> int:
     if (val1 & (1 << 31)) >> 31:
-        val1 = val1 & 0xffffffffffffffff
+        val1 = val1 | 0xffffffff00000000
     if (val2 & (1 << 31)) >> 31:
-        val2 = val2 & 0xffffffffffffffff
+        val2 = val2 | 0xffffffff00000000
     return (val1 * val2) & 0xffffffff
 
 def tc_div(val1: int, val2: int) -> int:
