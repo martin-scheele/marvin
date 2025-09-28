@@ -220,8 +220,14 @@ def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]], verbose: bool
 
     return machineCodes
 
+reg: list[int]
+mem: list[int]
+pc: int
+stack_end: int
+
 # Simulate the assembled instructions in machineCodes.
 def simulate(machineCodes: list[int], debug: bool):
+    global reg, mem, pc, stack_end
     reg = [0] * 16     # registers
     mem = [0] * 65536  # main memory
     pc = 0             # program counter
@@ -252,8 +258,6 @@ def simulate(machineCodes: list[int], debug: bool):
 
         # Debug stub
         if debug:
-            # TODO: actually have a function here
-            # - args: mem, reg, code, pc
             print(f"pc: {pc} opcode: {opcode}")
             print(f"r0:  {reg[0]: 10d} r1:  {reg[1]: 10d} r2:  {reg[2]: 10d} r3:  {reg[3]: 10d}")
             print(f"r4:  {reg[4]: 10d} r5:  {reg[5]: 10d} r6:  {reg[6]: 10d} r7:  {reg[7]: 10d}")
@@ -268,219 +272,270 @@ def simulate(machineCodes: list[int], debug: bool):
             _ = input()
 
         # Simulation the instruction given by opcode.
+        instructions[opcode](code)
 
-        # TODO: dict of funcs like HMMM
-        # - args: mem, reg, pc, code (make global?)
 
-        # halt
-        if opcode == "halt":
-            break
-        # read
-        elif opcode == "read":
-            arg1 = code & 0xf
-            while True:
-                try:
-                    x = int(input())
-                    if (validNum(x)):
-                        break
-                    raise ValueError
-                except ValueError:
-                    print("Illegal input: number must be in [-32768, 32767]")
-            reg[arg1] = x
-            pc += 1
-        # write
-        elif opcode == "write":
-            arg1 = code & 0xf
-            print(reg[arg1])
-            pc += 1
-        # nop
-        elif opcode == "nop":
-            pc += 1
-            continue
-        # set0
-        elif opcode == "set0":
-            arg1 = code & 0xf
-            reg[arg1] = 0
-            pc += 1
-        # set1
-        elif opcode == "set1":
-            arg1 = code & 0xf
-            reg[arg1] = 1
-            pc += 1
-        # jumpr
-        elif opcode == "jumpr":
-            arg1 = code & 0xf
-            pc = reg[arg1]
-        # jumpn
-        elif opcode == "jumpn":
-            arg1 = code & 0xffff
-            pc = arg1
-        # copy
-        elif opcode == "copy":
-            arg1 = (code & 0xf << 4) >> 4
-            arg2 = code & 0xf
-            reg[arg1] = reg[arg2]
-            pc += 1
-        # loadr
-        elif opcode == "loadr":
-            arg1 = (code & 0xf << 4) >> 4
-            arg2 = code & 0xf
-            reg[arg1] = mem[reg[arg2]]
-            pc += 1
-        # neg
-        elif opcode == "neg":
-            arg1 = (code & 0xf << 4) >> 4
-            arg2 = code & 0xf
-            reg[arg1] = -reg[arg2]
-            pc += 1
-        # popr
-        elif opcode == "popr":
-            arg1 = (code & 0xf << 4) >> 4
-            arg2 = code & 0xf
-            reg[arg2] += 1
-            reg[arg1] = mem[reg[arg2]]
-            pc += 1
-        # pushr
-        elif opcode == "pushr":
-            if reg[15] == stack_end:
-                sys.exit(f"Error: stack overflow attempting to execute mem['{pc}']; halting the machine")
-            arg1 = (code & 0xf << 4) >> 4
-            arg2 = code & 0xf
-            mem[reg[arg2]] = reg[arg1]
-            reg[arg2] -= 1
-            pc += 1
-        # storer
-        elif opcode == "storer":
-            arg1 = (code & 0xf << 4) >> 4
-            arg2 = code & 0xf
-            mem[reg[arg2]] = reg[arg1]
-            pc += 1
-        # addn
-        elif opcode == "addn":
-            arg1 = (code & 0xf << 16) >> 16
-            arg2 = code & 0xffff
-            # TODO: solve two's complement arithmetic for addn, setn, loadn, storen
-            if ((arg2 & 0b1 << 15) >> 15):
-                arg2 = (arg2 - 1) ^ 0xffff
-                arg2 = -arg2
-            reg[arg1] += arg2
-            pc += 1
-        # calln
-        elif opcode == "calln":
-            arg1 = (code & 0xf << 16) >> 16
-            arg2 = code & 0xffff
-            reg[arg1] = pc + 1
-            pc = arg2
-        # jeqzn
-        elif opcode == "jeqzn":
-            arg1 = (code & 0xf << 16) >> 16
-            arg2 = code & 0xffff
-            pc = arg2 if reg[arg1] == 0 else pc + 1
-        # jnezn
-        elif opcode == "jnezn":
-            arg1 = (code & 0xf << 16) >> 16
-            arg2 = code & 0xffff
-            pc = arg2 if reg[arg1] != 0 else pc + 1
-        # loadn
-        elif opcode == "loadn":
-            arg1 = (code & 0xf << 20) >> 20
-            arg2 = (code & 0xf << 16) >> 16
-            arg3 = code & 0xffff
-            if ((arg3 & 0b1 << 15) >> 15):
-                arg3 = (arg3 - 1) ^ 0xffff
-                arg3 = -arg3
-            reg[arg1] = mem[reg[arg2] + arg3]
-            pc += 1
-        # setn
-        elif opcode == "setn":
-            arg1 = (code & 0xf << 16) >> 16 
-            arg2 = code & 0xffff
-            if ((arg2 & 0b1 << 15) >> 15):
-                arg2 = (arg2 - 1) ^ 0xffff
-                arg2 = -arg2
-            reg[arg1] = arg2
-            pc += 1
-        # storen
-        elif opcode == "storen":
-            arg1 = (code & 0xf << 20) >> 20
-            arg2 = (code & 0xf << 16) >> 16
-            arg3 = code & 0xffff
-            if ((arg3 & 0b1 << 15) >> 15):
-                arg3 = (arg3 - 1) ^ 0xffff
-                arg3 = -arg3
-            mem[reg[arg2] + arg3] = reg[arg1]
-            pc += 1
-        # add
-        elif opcode == "add":
-            arg1 = (code & 0xf << 8) >> 8
-            arg2 = (code & 0xf << 4) >> 4 
-            arg3 = code & 0xf
-            reg[arg1] = reg[arg2] + reg[arg3]
-            pc += 1
-        # div
-        elif opcode == "div":
-            arg1 = (code & 0xf << 8) >> 8
-            arg2 = (code & 0xf << 4) >> 4
-            arg3 = code & 0xf
-            reg[arg1] = reg[arg2] // reg[arg3]
-            pc += 1
-        # mod
-        elif opcode == "mod":
-            arg1 = (code & 0xf << 8) >> 8
-            arg2 = (code & 0xf << 4) >> 4
-            arg3 = code & 0xf
-            reg[arg1] = reg[arg2] % reg[arg3]
-            pc += 1
-        # mul
-        elif opcode == "mul":
-            arg1 = (code & 0xf << 8) >> 8
-            arg2 = (code & 0xf << 4) >> 4
-            arg3 = code & 0xf
-            reg[arg1] = reg[arg2] * reg[arg3]
-            pc += 1
-        # sub
-        elif opcode == "sub":
-            arg1 = (code & 0xf << 8) >> 8
-            arg2 = (code & 0xf << 4) >> 4
-            arg3 = code & 0xf
-            reg[arg1] = reg[arg2] - reg[arg3]
-            pc += 1
-        # jeqn
-        elif opcode == "jeqn":
-            arg1 = (code & 0xf << 20) >> 20
-            arg2 = (code & 0xf << 16) >> 16
-            arg3 = code & 0xffff
-            pc = arg3 if reg[arg1] == reg[arg2] else pc + 1
-        # jgen
-        elif opcode == "jgen":
-            arg1 = (code & 0xf << 20) >> 20
-            arg2 = (code & 0xf << 16) >> 16 
-            arg3 = code & 0xffff
-            pc = arg3 if reg[arg1] >= reg[arg2] else pc + 1
-        # jgtn
-        elif opcode == "jgtn":
-            arg1 = (code & 0xf << 20) >> 20
-            arg2 = (code & 0xf << 16) >> 16
-            arg3 = code & 0xffff
-            pc = arg3 if reg[arg1] > reg[arg2] else pc + 1
-        # jlen
-        elif opcode == "jlen":
-            arg1 = (code & 0xf << 20) >> 20
-            arg2 = (code & 0xf << 16) >> 16
-            arg3 = code & 0xffff
-            pc = arg3 if reg[arg1] <= reg[arg2] else pc + 1
-        # jltn
-        elif opcode == "jltn":
-            arg1 = (code & 0xf << 20) >> 20
-            arg2 = (code & 0xf << 16) >> 16
-            arg3 = code & 0xffff
-            pc = arg3 if reg[arg1] < reg[arg2] else pc + 1
-        # jnen
-        elif opcode == "jnen":
-            arg1 = (code & 0xf << 20) >> 20
-            arg2 = (code & 0xf << 16) >> 16
-            arg3 = code & 0xffff
-            pc = arg3 if reg[arg1] != reg[arg2] else pc + 1
+def op_halt(code: int):
+    sys.exit()
+
+def op_read(code: int):
+    global reg, pc
+    arg1 = code & 0xf
+    while True:
+        try:
+            x = int(input())
+            if (validNum(x)):
+                break
+            raise ValueError
+        except ValueError:
+            print("Illegal input: number must be in [-32768, 32767]")
+    reg[arg1] = x
+    pc += 1
+
+def op_write(code: int):
+    global reg, pc
+    arg1 = code & 0xf
+    print(reg[arg1])
+    pc += 1
+
+def op_nop(code: int):
+    global pc
+    pc += 1
+
+def op_set0(code: int):
+    global reg, pc
+    arg1 = code & 0xf
+    reg[arg1] = 0
+    pc += 1
+
+def op_set1(code: int):
+    global reg, pc
+    arg1 = code & 0xf
+    reg[arg1] = 1
+    pc += 1
+
+def op_jumpr(code: int):
+    global reg, pc
+    arg1 = code & 0xf
+    pc = reg[arg1]
+
+def op_jumpn(code: int):
+    global pc
+    arg1 = code & 0xffff
+    pc = arg1
+
+def op_copy(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 4) >> 4
+    arg2 = code & 0xf
+    reg[arg1] = reg[arg2]
+    pc += 1
+
+def op_loadr(code: int):
+    global reg, mem, pc
+    arg1 = (code & 0xf << 4) >> 4
+    arg2 = code & 0xf
+    reg[arg1] = mem[reg[arg2]]
+    pc += 1
+
+def op_neg(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 4) >> 4
+    arg2 = code & 0xf
+    reg[arg1] = -reg[arg2]
+    pc += 1
+
+def op_popr(code: int):
+    global reg, mem, pc
+    arg1 = (code & 0xf << 4) >> 4
+    arg2 = code & 0xf
+    reg[arg2] += 1
+    reg[arg1] = mem[reg[arg2]]
+    pc += 1
+
+def op_pushr(code: int):
+    global reg, mem, pc, stack_end
+    if reg[15] == stack_end:
+        sys.exit(f"Error: stack overflow attempting to execute mem['{pc}']; halting the machine")
+    arg1 = (code & 0xf << 4) >> 4
+    arg2 = code & 0xf
+    mem[reg[arg2]] = reg[arg1]
+    reg[arg2] -= 1
+    pc += 1
+
+def op_storer(code: int):
+    global reg, mem, pc
+    arg1 = (code & 0xf << 4) >> 4
+    arg2 = code & 0xf
+    mem[reg[arg2]] = reg[arg1]
+    pc += 1
+
+def op_addn(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 16) >> 16
+    arg2 = code & 0xffff
+    # TODO: solve two's complement arithmetic for addn, setn, loadn, storen
+    if ((arg2 & 0b1 << 15) >> 15):
+        arg2 = (arg2 - 1) ^ 0xffff
+        arg2 = -arg2
+    reg[arg1] += arg2
+    pc += 1
+
+def op_calln(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 16) >> 16
+    arg2 = code & 0xffff
+    reg[arg1] = pc + 1
+    pc = arg2
+
+def op_jeqzn(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 16) >> 16
+    arg2 = code & 0xffff
+    pc = arg2 if reg[arg1] == 0 else pc + 1
+
+def op_jnezn(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 16) >> 16
+    arg2 = code & 0xffff
+    pc = arg2 if reg[arg1] != 0 else pc + 1
+
+def op_loadn(code: int):
+    global reg, mem, pc
+    arg1 = (code & 0xf << 20) >> 20
+    arg2 = (code & 0xf << 16) >> 16
+    arg3 = code & 0xffff
+    if ((arg3 & 0b1 << 15) >> 15):
+        arg3 = (arg3 - 1) ^ 0xffff
+        arg3 = -arg3
+    reg[arg1] = mem[reg[arg2] + arg3]
+    pc += 1
+
+def op_setn(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 16) >> 16 
+    arg2 = code & 0xffff
+    if ((arg2 & 0b1 << 15) >> 15):
+        arg2 = (arg2 - 1) ^ 0xffff
+        arg2 = -arg2
+    reg[arg1] = arg2
+    pc += 1
+
+def op_storen(code: int):
+    global reg, mem, pc
+    arg1 = (code & 0xf << 20) >> 20
+    arg2 = (code & 0xf << 16) >> 16
+    arg3 = code & 0xffff
+    if ((arg3 & 0b1 << 15) >> 15):
+        arg3 = (arg3 - 1) ^ 0xffff
+        arg3 = -arg3
+    mem[reg[arg2] + arg3] = reg[arg1]
+    pc += 1
+
+def op_add(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 8) >> 8
+    arg2 = (code & 0xf << 4) >> 4 
+    arg3 = code & 0xf
+    reg[arg1] = reg[arg2] + reg[arg3]
+    pc += 1
+
+def op_div(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 8) >> 8
+    arg2 = (code & 0xf << 4) >> 4
+    arg3 = code & 0xf
+    reg[arg1] = reg[arg2] // reg[arg3]
+    pc += 1
+
+def op_mod(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 8) >> 8
+    arg2 = (code & 0xf << 4) >> 4
+    arg3 = code & 0xf
+    reg[arg1] = reg[arg2] % reg[arg3]
+    pc += 1
+
+def op_mul(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 8) >> 8
+    arg2 = (code & 0xf << 4) >> 4
+    arg3 = code & 0xf
+    reg[arg1] = reg[arg2] * reg[arg3]
+    pc += 1
+
+def op_sub(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 8) >> 8
+    arg2 = (code & 0xf << 4) >> 4
+    arg3 = code & 0xf
+    reg[arg1] = reg[arg2] - reg[arg3]
+    pc += 1
+
+def op_jeqn(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 20) >> 20
+    arg2 = (code & 0xf << 16) >> 16
+    arg3 = code & 0xffff
+    pc = arg3 if reg[arg1] == reg[arg2] else pc + 1
+
+def op_jgen(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 20) >> 20
+    arg2 = (code & 0xf << 16) >> 16 
+    arg3 = code & 0xffff
+    pc = arg3 if reg[arg1] >= reg[arg2] else pc + 1
+
+def op_jgtn(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 20) >> 20
+    arg2 = (code & 0xf << 16) >> 16
+    arg3 = code & 0xffff
+    pc = arg3 if reg[arg1] > reg[arg2] else pc + 1
+
+def op_jlen(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 20) >> 20
+    arg2 = (code & 0xf << 16) >> 16
+    arg3 = code & 0xffff
+    pc = arg3 if reg[arg1] <= reg[arg2] else pc + 1
+
+def op_jltn(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 20) >> 20
+    arg2 = (code & 0xf << 16) >> 16
+    arg3 = code & 0xffff
+    pc = arg3 if reg[arg1] < reg[arg2] else pc + 1
+
+def op_jnen(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 20) >> 20
+    arg2 = (code & 0xf << 16) >> 16
+    arg3 = code & 0xffff
+    pc = arg3 if reg[arg1] != reg[arg2] else pc + 1
+
+def op_unimp(code: int):
+    print("unimplemented")
+
+instructions = {}
+for op in opcode2bin.keys():
+    func = "op_" + op
+    if func in globals():
+        instructions[op] = globals()[func]
+    else:
+        instructions[op] = op_unimp
+
+def tc_int2tc(val: int) -> int:
+    if val < 0:
+        val = -val
+        val = (val ^ 0xffffffff) + 1
+    return val
+
+def tc_add(val1: int, val2: int) -> int:
+    raise NotImplementedError
+
+def tc_neg(val: int) -> int:
+    raise NotImplementedError
 
 # Returns True if s encodes an integer, and False otherwise.
 def isNum(s: str) -> bool:
