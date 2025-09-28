@@ -178,9 +178,9 @@ def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]], verbose: bool
         elif opcode in {"addn", "setn"}:
             bArg1 = reg2bin[args[0]]
             val = int(args[1])
-            if (val < 0):
+            if val < 0:
                 val = -val
-                val = val | 1 << 15
+                val = (val ^ 0xffff) + 1
             bArg2, bArg3 = val >> 8, val & 0xff
         elif opcode in {"calln", "jeqzn", "jnezn"}:
             bArg1 = reg2bin[args[0]]
@@ -195,9 +195,9 @@ def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]], verbose: bool
         elif opcode in {"loadn", "storen"}:
             bArg1 = reg2bin[args[0]] << 4 | reg2bin[args[1]]
             val = int(args[2])
-            if (val < 0):
+            if val < 0:
                 val = -val
-                val = val | 1 << 15
+                val = (val ^ 0xffff) + 1
             bArg2, bArg3 = val >> 8, val & 0xff
 
         op = opcode2bin[opcode]
@@ -211,7 +211,7 @@ def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]], verbose: bool
 
             binCode = f"{id: >5}: {format(opcode2bin[opcode], '08b')} {bArg1} {bArg2} {bArg3}"
             asmCode = f"{id: >5}: {opcode: <6} {" ".join(args)}"
-            verboseOutput.append(f"{binCode: <50}        {asmCode}")
+            verboseOutput.append(f"{binCode: <50} {asmCode}")
 
     if verbose:
         for s in verboseOutput:
@@ -359,8 +359,9 @@ def simulate(machineCodes: list[int], debug: bool):
         elif opcode == "addn":
             arg1 = (code & 0xf << 16) >> 16
             arg2 = code & 0xffff
+            # TODO: solve two's complement arithmetic for addn, setn, loadn, storen
             if ((arg2 & 0b1 << 15) >> 15):
-                arg2 = arg2 & ~(0b1 << 15)
+                arg2 = (arg2 - 1) ^ 0xffff
                 arg2 = -arg2
             reg[arg1] += arg2
             pc += 1
@@ -386,7 +387,7 @@ def simulate(machineCodes: list[int], debug: bool):
             arg2 = (code & 0xf << 16) >> 16
             arg3 = code & 0xffff
             if ((arg3 & 0b1 << 15) >> 15):
-                arg3 = arg3 & ~(0b1 << 15)
+                arg3 = (arg3 - 1) ^ 0xffff
                 arg3 = -arg3
             reg[arg1] = mem[reg[arg2] + arg3]
             pc += 1
@@ -395,7 +396,7 @@ def simulate(machineCodes: list[int], debug: bool):
             arg1 = (code & 0xf << 16) >> 16 
             arg2 = code & 0xffff
             if ((arg2 & 0b1 << 15) >> 15):
-                arg2 = arg2 & ~(0b1 << 15)
+                arg2 = (arg2 - 1) ^ 0xffff
                 arg2 = -arg2
             reg[arg1] = arg2
             pc += 1
@@ -405,7 +406,7 @@ def simulate(machineCodes: list[int], debug: bool):
             arg2 = (code & 0xf << 16) >> 16
             arg3 = code & 0xffff
             if ((arg3 & 0b1 << 15) >> 15):
-                arg3 = arg3 & ~(0b1 << 15)
+                arg3 = (arg3 - 1) ^ 0xffff
                 arg3 = -arg3
             mem[reg[arg2] + arg3] = reg[arg1]
             pc += 1
