@@ -177,10 +177,7 @@ def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]], verbose: bool
             bArg1, bArg2, bArg3 = 0, 0, reg2bin[args[0]] << 4 | reg2bin[args[1]]
         elif opcode in {"addn", "setn"}:
             bArg1 = reg2bin[args[0]]
-            val = int(args[1])
-            if val < 0:
-                val = -val
-                val = (val ^ 0xffff) + 1
+            val = tc_int2tc16b(int(args[1]))
             bArg2, bArg3 = val >> 8, val & 0xff
         elif opcode in {"calln", "jeqzn", "jnezn"}:
             bArg1 = reg2bin[args[0]]
@@ -194,10 +191,7 @@ def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]], verbose: bool
             bArg2, bArg3 = val >> 8, val & 0xff
         elif opcode in {"loadn", "storen"}:
             bArg1 = reg2bin[args[0]] << 4 | reg2bin[args[1]]
-            val = int(args[2])
-            if val < 0:
-                val = -val
-                val = (val ^ 0xffff) + 1
+            val = tc_int2tc16b(int(args[2]))
             bArg2, bArg3 = val >> 8, val & 0xff
 
         op = opcode2bin[opcode]
@@ -289,13 +283,13 @@ def op_read(code: int):
             raise ValueError
         except ValueError:
             print("Illegal input: number must be in [-32768, 32767]")
-    reg[arg1] = x
+    reg[arg1] = tc_int2tc32b(x)
     pc += 1
 
 def op_write(code: int):
     global reg, pc
     arg1 = code & 0xf
-    print(reg[arg1])
+    print(tc_tc2int(reg[arg1]))
     pc += 1
 
 def op_nop(code: int):
@@ -342,14 +336,14 @@ def op_neg(code: int):
     global reg, pc
     arg1 = (code & 0xf << 4) >> 4
     arg2 = code & 0xf
-    reg[arg1] = -reg[arg2]
+    reg[arg1] = tc_neg(reg[arg2])
     pc += 1
 
 def op_popr(code: int):
     global reg, mem, pc
     arg1 = (code & 0xf << 4) >> 4
     arg2 = code & 0xf
-    reg[arg2] += 1
+    reg[arg2] = tc_add(reg[arg2], 1)
     reg[arg1] = mem[reg[arg2]]
     pc += 1
 
@@ -360,7 +354,7 @@ def op_pushr(code: int):
     arg1 = (code & 0xf << 4) >> 4
     arg2 = code & 0xf
     mem[reg[arg2]] = reg[arg1]
-    reg[arg2] -= 1
+    reg[arg2] = tc_sub(reg[arg2], 1)
     pc += 1
 
 def op_storer(code: int):
@@ -374,17 +368,14 @@ def op_addn(code: int):
     global reg, pc
     arg1 = (code & 0xf << 16) >> 16
     arg2 = code & 0xffff
-    # TODO: solve two's complement arithmetic for addn, setn, loadn, storen
-    if ((arg2 & 0b1 << 15) >> 15):
-        arg2 = (arg2 - 1) ^ 0xffff
-        arg2 = -arg2
-    reg[arg1] += arg2
+    reg[arg1] = tc_add(reg[arg1], tc_16b232b(arg2))
     pc += 1
 
 def op_calln(code: int):
     global reg, pc
     arg1 = (code & 0xf << 16) >> 16
     arg2 = code & 0xffff
+    # I think this is guaranteed to never be over integer limit
     reg[arg1] = pc + 1
     pc = arg2
 
@@ -405,20 +396,14 @@ def op_loadn(code: int):
     arg1 = (code & 0xf << 20) >> 20
     arg2 = (code & 0xf << 16) >> 16
     arg3 = code & 0xffff
-    if ((arg3 & 0b1 << 15) >> 15):
-        arg3 = (arg3 - 1) ^ 0xffff
-        arg3 = -arg3
-    reg[arg1] = mem[reg[arg2] + arg3]
+    reg[arg1] = mem[tc_add(reg[arg2], tc_16b232b(arg3))]
     pc += 1
 
 def op_setn(code: int):
     global reg, pc
     arg1 = (code & 0xf << 16) >> 16 
     arg2 = code & 0xffff
-    if ((arg2 & 0b1 << 15) >> 15):
-        arg2 = (arg2 - 1) ^ 0xffff
-        arg2 = -arg2
-    reg[arg1] = arg2
+    reg[arg1] = tc_16b232b(arg2)
     pc += 1
 
 def op_storen(code: int):
@@ -426,10 +411,7 @@ def op_storen(code: int):
     arg1 = (code & 0xf << 20) >> 20
     arg2 = (code & 0xf << 16) >> 16
     arg3 = code & 0xffff
-    if ((arg3 & 0b1 << 15) >> 15):
-        arg3 = (arg3 - 1) ^ 0xffff
-        arg3 = -arg3
-    mem[reg[arg2] + arg3] = reg[arg1]
+    mem[tc_add(reg[arg2], tc_16b232b(arg3))] = reg[arg1]
     pc += 1
 
 def op_add(code: int):
@@ -437,7 +419,7 @@ def op_add(code: int):
     arg1 = (code & 0xf << 8) >> 8
     arg2 = (code & 0xf << 4) >> 4 
     arg3 = code & 0xf
-    reg[arg1] = reg[arg2] + reg[arg3]
+    reg[arg1] = tc_add(reg[arg2], reg[arg3])
     pc += 1
 
 def op_div(code: int):
@@ -461,7 +443,7 @@ def op_mul(code: int):
     arg1 = (code & 0xf << 8) >> 8
     arg2 = (code & 0xf << 4) >> 4
     arg3 = code & 0xf
-    reg[arg1] = reg[arg2] * reg[arg3]
+    reg[arg1] = tc_mul(reg[arg2], reg[arg3])
     pc += 1
 
 def op_sub(code: int):
@@ -469,7 +451,7 @@ def op_sub(code: int):
     arg1 = (code & 0xf << 8) >> 8
     arg2 = (code & 0xf << 4) >> 4
     arg3 = code & 0xf
-    reg[arg1] = reg[arg2] - reg[arg3]
+    reg[arg1] = tc_sub(reg[arg2], reg[arg3])
     pc += 1
 
 def op_jeqn(code: int):
@@ -525,16 +507,53 @@ for op in opcode2bin.keys():
     else:
         instructions[op] = op_unimp
 
-def tc_int2tc(val: int) -> int:
+def tc_int2tc32b(val: int) -> int:
     if val < 0:
         val = -val
         val = (val ^ 0xffffffff) + 1
     return val
 
-def tc_add(val1: int, val2: int) -> int:
-    raise NotImplementedError
+def tc_int2tc16b(val: int) -> int:
+    if val < 0:
+        val = -val
+        val = (val ^ 0xffff) + 1
+    return val
+
+def tc_tc2int(val: int) -> int:
+    if (val & 1 << 31) >> 31:
+        val = (val - 1) ^ 0xffffffff
+        val = -val
+    return val
 
 def tc_neg(val: int) -> int:
+    return val ^ (1 << 31)
+
+def tc_add(val1: int, val2: int) -> int:
+    val = val1 + val2
+    return val
+
+def tc_sub(val1: int, val2: int) -> int:
+    val = val1 - val2
+    return val
+
+def tc_16b232b(val: int) -> int:
+    sign = (val & (1 << 15)) >> 15
+    return (sign << 31) & (val & 0x7fff)
+
+def tc_mul(val1: int, val2: int) -> int:
+    if (val1 & (1 << 31)) >> 31:
+        val1 = val1 & 0xffffffffffffffff
+    if (val2 & (1 << 31)) >> 31:
+        val2 = val2 & 0xffffffffffffffff
+    return (val1 * val2) & 0xffffffff
+
+def tc_div(val1: int, val2: int) -> int:
+    sign = ((val1 & (1 << 31)) >> 31) ^ ((val2 & (1 << 31)) >> 31)
+    val1 = val1 & 0x7fffffff
+    val2 = val2 & 0x7fffffff
+    return (val1 // val2) | (sign << 31)
+
+def tc_mod(val1: int, val2: int) -> int:
     raise NotImplementedError
 
 # Returns True if s encodes an integer, and False otherwise.
