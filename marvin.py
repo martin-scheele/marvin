@@ -543,12 +543,12 @@ def tc_int_to_b32(val: int) -> int:
     return val
 
 def tc_b16_to_b32(val: int) -> int:
-    if (val & 1 << 15) >> 15:
+    if val & 1 << 15:
         val = val | (0xffff << 16)
     return val
 
 def tc_b32_to_int(val: int) -> int:
-    if (val & 1 << 31) >> 31:
+    if val & 1 << 31:
         val = (val - 1) ^ 0xffffffff
         val = -val
     return val
@@ -565,15 +565,15 @@ def tc_sub(val1: int, val2: int) -> int:
     return (val1 - val2) & 0xffffffff
 
 def tc_mul(val1: int, val2: int) -> int:
-    if (val1 & (1 << 31)) >> 31:
-        val1 = val1 | (0xffffffff << 8)
-    if (val2 & (1 << 31)) >> 31:
-        val2 = val2 | (0xffffffff << 8)
+    if (val1 & (1 << 31)):
+        val1 = val1 | (0xffffffff << 32)
+    if (val2 & (1 << 31)):
+        val2 = val2 | (0xffffffff << 32) 
     return (val1 * val2) & 0xffffffff
 
 def tc_div(val1: int, val2: int) -> int:
-    sign = ((val1 & (1 << 31)) >> 31) ^ ((val2 & (1 << 31)) >> 31)
-    return ((val1 & 0x7fffffff) // (val2 & 0x7fffffff)) | (sign << 31)
+    sign = (val1 & (1 << 31)) ^ (val2 & (1 << 31))
+    return sign | ((val1 & 0x7fffffff) // (val2 & 0x7fffffff))
 
 def tc_mod(val1: int, val2: int) -> int:
     raise NotImplementedError
