@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import random
 import struct
 import sys
-import random
 import time
 
 description = """
@@ -299,44 +299,26 @@ def op_write(code: int):
     print(tc_b32_to_int(reg[arg1]))
     pc += 1
 
+def op_seed(code: int):
+    global reg, pc
+    arg1 = code & 0xf
+    random.seed((reg[arg1]))
+    pc += 1
+
+def op_rand(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 8) >> 8
+    arg2 = (code & 0xf << 4) >> 4
+    arg3 = code & 0xf
+    lo = tc_b32_to_int(reg[arg1])
+    hi = tc_b32_to_int(reg[arg2])
+    reg[arg3] = tc_int_to_b32(random.randint(lo, hi))
+
+def op_time(code: int):
+    raise NotImplementedError
+
 def op_nop(code: int):
     global pc
-    pc += 1
-
-def op_set0(code: int):
-    global reg, pc
-    arg1 = code & 0xf
-    reg[arg1] = 0
-    pc += 1
-
-def op_set1(code: int):
-    global reg, pc
-    arg1 = code & 0xf
-    reg[arg1] = 1
-    pc += 1
-
-def op_jumpr(code: int):
-    global reg, pc
-    arg1 = code & 0xf
-    pc = reg[arg1]
-
-def op_jumpn(code: int):
-    global pc
-    arg1 = code & 0xffff
-    pc = arg1
-
-def op_copy(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 4) >> 4
-    arg2 = code & 0xf
-    reg[arg1] = reg[arg2]
-    pc += 1
-
-def op_loadr(code: int):
-    global reg, mem, pc
-    arg1 = (code & 0xf << 4) >> 4
-    arg2 = code & 0xf
-    reg[arg1] = mem[reg[arg2]]
     pc += 1
 
 def op_neg(code: int):
@@ -346,87 +328,28 @@ def op_neg(code: int):
     reg[arg1] = tc_neg(reg[arg2])
     pc += 1
 
-def op_popr(code: int):
-    global reg, mem, pc
-    arg1 = (code & 0xf << 4) >> 4
-    arg2 = code & 0xf
-    reg[arg2] = tc_add(reg[arg2], 1)
-    reg[arg1] = mem[reg[arg2]]
-    pc += 1
-
-def op_pushr(code: int):
-    global reg, mem, pc, stack_end
-    if reg[15] == stack_end:
-        sys.exit(f"Error: stack overflow attempting to execute mem['{pc}']; halting the machine")
-    arg1 = (code & 0xf << 4) >> 4
-    arg2 = code & 0xf
-    mem[reg[arg2]] = reg[arg1]
-    reg[arg2] = tc_sub(reg[arg2], 1)
-    pc += 1
-
-def op_storer(code: int):
-    global reg, mem, pc
-    arg1 = (code & 0xf << 4) >> 4
-    arg2 = code & 0xf
-    mem[reg[arg2]] = reg[arg1]
-    pc += 1
-
-def op_addn(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 16) >> 16
-    arg2 = code & 0xffff
-    reg[arg1] = tc_add(reg[arg1], tc_b16_to_b32(arg2))
-    pc += 1
-
-def op_calln(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 16) >> 16
-    arg2 = code & 0xffff
-    # I think this is guaranteed to never be over integer limit
-    reg[arg1] = pc + 1
-    pc = arg2
-
-def op_jeqzn(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 16) >> 16
-    arg2 = code & 0xffff
-    pc = arg2 if reg[arg1] == 0 else pc + 1
-
-def op_jnezn(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 16) >> 16
-    arg2 = code & 0xffff
-    pc = arg2 if reg[arg1] != 0 else pc + 1
-
-def op_loadn(code: int):
-    global reg, mem, pc
-    arg1 = (code & 0xf << 20) >> 20
-    arg2 = (code & 0xf << 16) >> 16
-    arg3 = code & 0xffff
-    reg[arg1] = mem[tc_add(reg[arg2], tc_b16_to_b32(arg3))]
-    pc += 1
-
-def op_setn(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 16) >> 16 
-    arg2 = code & 0xffff
-    reg[arg1] = tc_b16_to_b32(arg2)
-    pc += 1
-
-def op_storen(code: int):
-    global reg, mem, pc
-    arg1 = (code & 0xf << 20) >> 20
-    arg2 = (code & 0xf << 16) >> 16
-    arg3 = code & 0xffff
-    mem[tc_add(reg[arg2], tc_b16_to_b32(arg3))] = reg[arg1]
-    pc += 1
-
 def op_add(code: int):
     global reg, pc
     arg1 = (code & 0xf << 8) >> 8
     arg2 = (code & 0xf << 4) >> 4 
     arg3 = code & 0xf
     reg[arg1] = tc_add(reg[arg2], reg[arg3])
+    pc += 1
+
+def op_sub(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 8) >> 8
+    arg2 = (code & 0xf << 4) >> 4
+    arg3 = code & 0xf
+    reg[arg1] = tc_sub(reg[arg2], reg[arg3])
+    pc += 1
+
+def op_mul(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 8) >> 8
+    arg2 = (code & 0xf << 4) >> 4
+    arg3 = code & 0xf
+    reg[arg1] = tc_mul(reg[arg2], reg[arg3])
     pc += 1
 
 def op_div(code: int):
@@ -445,28 +368,27 @@ def op_mod(code: int):
     reg[arg1] = reg[arg2] % reg[arg3]
     pc += 1
 
-def op_mul(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = code & 0xf
-    reg[arg1] = tc_mul(reg[arg2], reg[arg3])
-    pc += 1
+def op_jumpn(code: int):
+    global pc
+    arg1 = code & 0xffff
+    pc = arg1
 
-def op_sub(code: int):
+def op_jumpr(code: int):
     global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = code & 0xf
-    reg[arg1] = tc_sub(reg[arg2], reg[arg3])
-    pc += 1
+    arg1 = code & 0xf
+    pc = reg[arg1]
 
-def op_jeqn(code: int):
+def op_jeqzn(code: int):
     global reg, pc
-    arg1 = (code & 0xf << 20) >> 20
-    arg2 = (code & 0xf << 16) >> 16
-    arg3 = code & 0xffff
-    pc = arg3 if reg[arg1] == reg[arg2] else pc + 1
+    arg1 = (code & 0xf << 16) >> 16
+    arg2 = code & 0xffff
+    pc = arg2 if reg[arg1] == 0 else pc + 1
+
+def op_jnezn(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 16) >> 16
+    arg2 = code & 0xffff
+    pc = arg2 if reg[arg1] != 0 else pc + 1
 
 def op_jgen(code: int):
     global reg, pc
@@ -475,13 +397,6 @@ def op_jgen(code: int):
     arg3 = code & 0xffff
     pc = arg3 if reg[arg1] >= reg[arg2] else pc + 1
 
-def op_jgtn(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 20) >> 20
-    arg2 = (code & 0xf << 16) >> 16
-    arg3 = code & 0xffff
-    pc = arg3 if reg[arg1] > reg[arg2] else pc + 1
-
 def op_jlen(code: int):
     global reg, pc
     arg1 = (code & 0xf << 20) >> 20
@@ -489,12 +404,12 @@ def op_jlen(code: int):
     arg3 = code & 0xffff
     pc = arg3 if reg[arg1] <= reg[arg2] else pc + 1
 
-def op_jltn(code: int):
+def op_jeqn(code: int):
     global reg, pc
     arg1 = (code & 0xf << 20) >> 20
     arg2 = (code & 0xf << 16) >> 16
     arg3 = code & 0xffff
-    pc = arg3 if reg[arg1] < reg[arg2] else pc + 1
+    pc = arg3 if reg[arg1] == reg[arg2] else pc + 1
 
 def op_jnen(code: int):
     global reg, pc
@@ -503,23 +418,108 @@ def op_jnen(code: int):
     arg3 = code & 0xffff
     pc = arg3 if reg[arg1] != reg[arg2] else pc + 1
 
-def op_seed(code: int):
+def op_jgtn(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 20) >> 20
+    arg2 = (code & 0xf << 16) >> 16
+    arg3 = code & 0xffff
+    pc = arg3 if reg[arg1] > reg[arg2] else pc + 1
+
+def op_jltn(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 20) >> 20
+    arg2 = (code & 0xf << 16) >> 16
+    arg3 = code & 0xffff
+    pc = arg3 if reg[arg1] < reg[arg2] else pc + 1
+
+def op_calln(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 16) >> 16
+    arg2 = code & 0xffff
+    # I think this is guaranteed to never be over integer limit
+    reg[arg1] = pc + 1
+    pc = arg2
+
+def op_set0(code: int):
     global reg, pc
     arg1 = code & 0xf
-    random.seed((reg[arg1]))
+    reg[arg1] = 0
     pc += 1
 
-def op_rand(code: int):
+def op_set1(code: int):
     global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = code & 0xf
-    lo = tc_b32_to_int(reg[arg1])
-    hi = tc_b32_to_int(reg[arg2])
-    reg[arg3] = tc_int_to_b32(random.randint(lo, hi))
+    arg1 = code & 0xf
+    reg[arg1] = 1
+    pc += 1
 
-def op_time(code: int):
-    raise NotImplementedError
+def op_setn(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 16) >> 16 
+    arg2 = code & 0xffff
+    reg[arg1] = tc_b16_to_b32(arg2)
+    pc += 1
+
+def op_addn(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 16) >> 16
+    arg2 = code & 0xffff
+    reg[arg1] = tc_add(reg[arg1], tc_b16_to_b32(arg2))
+    pc += 1
+
+def op_copy(code: int):
+    global reg, pc
+    arg1 = (code & 0xf << 4) >> 4
+    arg2 = code & 0xf
+    reg[arg1] = reg[arg2]
+    pc += 1
+
+def op_loadr(code: int):
+    global reg, mem, pc
+    arg1 = (code & 0xf << 4) >> 4
+    arg2 = code & 0xf
+    reg[arg1] = mem[reg[arg2]]
+    pc += 1
+
+def op_pushr(code: int):
+    global reg, mem, pc, stack_end
+    if reg[15] == stack_end:
+        sys.exit(f"Error: stack overflow attempting to execute mem['{pc}']; halting the machine")
+    arg1 = (code & 0xf << 4) >> 4
+    arg2 = code & 0xf
+    mem[reg[arg2]] = reg[arg1]
+    reg[arg2] = tc_sub(reg[arg2], 1)
+    pc += 1
+
+def op_popr(code: int):
+    global reg, mem, pc
+    arg1 = (code & 0xf << 4) >> 4
+    arg2 = code & 0xf
+    reg[arg2] = tc_add(reg[arg2], 1)
+    reg[arg1] = mem[reg[arg2]]
+    pc += 1
+
+def op_loadn(code: int):
+    global reg, mem, pc
+    arg1 = (code & 0xf << 20) >> 20
+    arg2 = (code & 0xf << 16) >> 16
+    arg3 = code & 0xffff
+    reg[arg1] = mem[tc_add(reg[arg2], tc_b16_to_b32(arg3))]
+    pc += 1
+
+def op_storen(code: int):
+    global reg, mem, pc
+    arg1 = (code & 0xf << 20) >> 20
+    arg2 = (code & 0xf << 16) >> 16
+    arg3 = code & 0xffff
+    mem[tc_add(reg[arg2], tc_b16_to_b32(arg3))] = reg[arg1]
+    pc += 1
+
+def op_storer(code: int):
+    global reg, mem, pc
+    arg1 = (code & 0xf << 4) >> 4
+    arg2 = code & 0xf
+    mem[reg[arg2]] = reg[arg1]
+    pc += 1
 
 def op_unimp(code: int):
     sys.exit(f"Error: operation {bin_to_opcode[code >> 24]} unimplemented")
