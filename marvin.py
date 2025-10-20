@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 import argparse
-from datetime import date
+import datetime
 import os
 import random
 import struct
 import sys
-import time
 
 description = """
 This program serves as an emulator for a register-based machine called Marvin (named after
@@ -151,7 +150,7 @@ def main():
             if not isNum(toks[4]):
                 sys.exit(f"Error {inFile}@{lineno}: invalid number '{toks[4]}'")
         else:
-            sys.exit(f"Error {inFile}@{lineno}: invalid instructions '{opcode}'")
+            sys.exit(f"Error {inFile}@{lineno}: invalid instruction '{opcode}'")
         tuples.append((lineno, id, opcode, *toks[2:]))
 
     # Additional validation of instruction arguments.
@@ -235,28 +234,26 @@ def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]], verbose: bool
 
     return machineCodes
 
-reg: list[int]
-mem: list[int]
-pc: int
-stack_end: int
+reg = [0] * 16     # registers
+mem = [0] * 65536  # main memory
+pc = 0             # program counter
+ir = 0             # instruction register
+# TODO: test difference between global ir and ir passed as argument
 
 # Simulate the assembled instructions in machineCodes.
 def simulate(machineCodes: list[int], debug: bool):
-    global reg, mem, pc, stack_end
-    reg = [0] * 16     # registers
-    mem = [0] * 65536  # main memory
-    pc = 0             # program counter
-    ir = 0             # instruction register
+    global reg, mem, pc, ir
 
     # Initialize the frame and stack pointers to 65535 (the base address of the stack).
-    reg[14], reg[15] = 65535, 65535
+    reg[reg_to_bin["fp"]] = reg[reg_to_bin["sp"]] = 65535
+
+    # Initialize the global pointer to 8192 (end of text segment)
+    reg[reg_to_bin["gp"]] = 8192
 
     # Load the machine codes into memory starting at location 0.
     for i, v in enumerate(machineCodes):
         mem[i] = v
-
-    # Initialize end of stack; 8K of text
-    stack_end = 8192
+        # TODO: check for maximum text size
 
     while True:
         # Fetch the next instruction to simulate.
@@ -266,18 +263,17 @@ def simulate(machineCodes: list[int], debug: bool):
             sys.exit(f"Error: attempted to execute mem['{pc}']; halting the machine")
 
         # Extract the opcode.
-        code = ir
-        op = code >> 24
-        opcode = bin_to_opcode[op]
+        opcode = bin_to_opcode[ir >> 24]
 
         # Debug stub
         if debug:
-            debug_exec(code)
+            debug_exec(ir)
 
         # Simulate the instruction given by opcode.
-        instructions[opcode](code)
+        instructions[opcode](ir)
 
 def debug_exec(code: int):
+    # TODO: track current register type if debug
     global reg, mem, pc
     opcode = bin_to_opcode[code >> 24]
     print(f"pc: {pc} opcode: {opcode}")
@@ -331,6 +327,8 @@ def op_readc(code: int):
     while True:
         try:
             x = sys.stdin.read(1)
+            # TODO: is this a fine way to handle it?
+            _ = sys.stdin.readline()
             break
         except Exception:
             # TODO: are there edge cases here?
@@ -353,6 +351,7 @@ def op_writef(code: int):
 def op_writec(code: int):
     global reg, pc
     arg1 = code & 0xf
+    # TODO: how to handle value outside of range? clamp?
     print(chr(reg[arg1]))
     pc += 1
 
@@ -375,15 +374,15 @@ def op_rand(code: int):
 def op_time(code: int):
     global reg, pc
     arg1 = code & 0xf
-    now = time.localtime()
-    reg[arg1] = now.tm_hour * 3600 + now.tm_min * 60 + now.tm_sec
+    now = datetime.datetime.now()
+    reg[arg1] = (now.hour * 3600 + now.minute * 60 + now.second) * 1000 + now.microsecond // 1000
     pc += 1
 
 
 def op_date(code: int):
     global reg, pc
     arg1 = code & 0xf
-    today = date.today()
+    today = datetime.date.today()
     reg[arg1] = today.year << 19 | today.month << 9 | today.day
     pc += 1
 
@@ -659,6 +658,8 @@ def op_copy(code: int):
     reg[arg1] = reg[arg2]
     pc += 1
 
+# Memory instructions
+
 def op_loadr(code: int):
     global reg, mem, pc
     arg1 = (code & 0xf << 4) >> 4
@@ -667,8 +668,9 @@ def op_loadr(code: int):
     pc += 1
 
 def op_pushr(code: int):
-    global reg, mem, pc, stack_end
-    if reg[15] == stack_end:
+    global reg, mem, pc
+    # check if sp == gp
+    if reg[reg_to_bin["sp"]] == reg[reg_to_bin["gp"]]:
         sys.exit(f"Error: stack overflow attempting to execute mem['{pc}']; halting the machine")
     arg1 = (code & 0xf << 4) >> 4
     arg2 = code & 0xf
@@ -716,6 +718,7 @@ for op in opcode_to_bin.keys():
     func = "op_" + op
     instructions[op] = globals()[func] if func in globals() else op_unimp
 
+# TODO: test performance impact of this
 def extract_args(code: int, *args: tuple[int, int]) -> list[int]:
     ret: list[int] = [] 
     for arg in args:
