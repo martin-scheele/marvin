@@ -46,10 +46,10 @@ bin_to_opcode = {opcode_to_bin[opcode]: opcode for opcode in opcode_to_bin.keys(
 
 # Maps register names to their binary 4-bit codes.
 reg_to_bin = {
-    "r0":  0b0000, "r1":  0b0001, "r2":  0b0010, "r3":  0b0011, 
-    "a0":  0b0000, "a1":  0b0001, "a2":  0b0010, "a3":  0b0011, 
+    "r0":  0b0000, "r1":  0b0001, "r2":  0b0010, "r3":  0b0011,
+    "a0":  0b0000, "a1":  0b0001, "a2":  0b0010,
 
-    "r4":  0b0100, "r5":  0b0101, "r6":  0b0110, "r7":  0b0111, 
+    "r4":  0b0100, "r5":  0b0101, "r6":  0b0110, "r7":  0b0111,
 
     "r8":  0b1000, "r9":  0b1001, "r10": 0b1010, "r11": 0b1011,
                                                  "ra":  0b1011,
@@ -776,6 +776,8 @@ def tc_mod(val1: int, val2: int) -> int:
 
 # TODO: optimize
 def fp_float_to_f16(val: float) -> int:
+    if val == 0:
+        return 0
     # find sign
     if val < 0:
         sign = 1
