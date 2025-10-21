@@ -234,11 +234,11 @@ def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]], verbose: bool
 
     return machineCodes
 
+# Global CPU variables.
 reg = [0] * 16     # registers
 mem = [0] * 65536  # main memory
 pc = 0             # program counter
 ir = 0             # instruction register
-# TODO: test difference between global ir and ir passed as argument
 
 # Simulate the assembled instructions in machineCodes.
 def simulate(machineCodes: list[int], debug: bool):
@@ -247,7 +247,7 @@ def simulate(machineCodes: list[int], debug: bool):
     # Initialize the frame and stack pointers to 65535 (the base address of the stack).
     reg[reg_to_bin["fp"]] = reg[reg_to_bin["sp"]] = 65535
 
-    # Initialize the global pointer to 8192 (end of text segment)
+    # Initialize the global pointer to 8192 (end of text segment).
     reg[reg_to_bin["gp"]] = 8192
 
     # Load the machine codes into memory starting at location 0.
@@ -267,15 +267,16 @@ def simulate(machineCodes: list[int], debug: bool):
 
         # Debug stub
         if debug:
-            debug_exec(ir)
+            debug_exec()
 
         # Simulate the instruction given by opcode.
-        instructions[opcode](ir)
+        # TODO: extract args out here somehow, like HMMM?
+        instructions[opcode]()
 
-def debug_exec(code: int):
+def debug_exec():
     # TODO: track current register type if debug
-    global reg, mem, pc
-    opcode = bin_to_opcode[code >> 24]
+    global reg, mem, pc, ir
+    opcode = bin_to_opcode[ir >> 24]
     print(f"pc: {pc} opcode: {opcode}")
     print(f"r0:  {tc_b32_to_int(reg[0]): 10d} r1:  {tc_b32_to_int(reg[1]): 10d} r2:  {tc_b32_to_int(reg[2]): 10d} r3:  {tc_b32_to_int(reg[3]): 10d}")
     print(f"r4:  {tc_b32_to_int(reg[4]): 10d} r5:  {tc_b32_to_int(reg[5]): 10d} r6:  {tc_b32_to_int(reg[6]): 10d} r7:  {tc_b32_to_int(reg[7]): 10d}")
@@ -291,12 +292,12 @@ def debug_exec(code: int):
 
 # System Instructions
 
-def op_halt(_: int):
+def op_halt():
     sys.exit()
 
-def op_readi(code: int):
-    global reg, pc
-    arg1 = code & 0xf
+def op_readi():
+    global reg, pc, ir
+    arg1, = extract_args(ir, (0xf, 0))
     while True:
         try:
             x = int(input())
@@ -308,9 +309,9 @@ def op_readi(code: int):
     reg[arg1] = tc_int_to_b32(x)
     pc += 1
 
-def op_readf(code: int):
-    global reg, pc
-    arg1 = code & 0xf
+def op_readf():
+    global reg, pc, ir
+    arg1, = extract_args(ir, (0xf, 0))
     while True:
         try:
             x = float(input())
@@ -321,227 +322,189 @@ def op_readf(code: int):
     reg[arg1] = fp_float_to_f32(x)
     pc += 1
 
-def op_readc(code: int):
-    global reg, pc
-    arg1 = code & 0xf
+def op_readc():
+    global reg, pc, ir
+    arg1, = extract_args(ir, (0xf, 0))
     while True:
         try:
+            # TODO: OS compliant getch()
             x = sys.stdin.read(1)
-            # TODO: is this a fine way to handle it?
             _ = sys.stdin.readline()
             break
         except Exception:
-            # TODO: are there edge cases here?
             pass
     reg[arg1] = ord(x)
     pc += 1
 
-def op_writei(code: int):
-    global reg, pc
-    arg1 = code & 0xf
+def op_writei():
+    global reg, pc, ir
+    arg1, = extract_args(ir, (0xf, 0))
     print(tc_b32_to_int(reg[arg1]))
     pc += 1
 
-def op_writef(code: int):
-    global reg, pc
-    arg1 = code & 0xf
+def op_writef():
+    global reg, pc, ir
+    arg1, = extract_args(ir, (0xf, 0))
     print(fp_f32_to_float(reg[arg1]))
     pc += 1
 
-def op_writec(code: int):
-    global reg, pc
-    arg1 = code & 0xf
+def op_writec():
+    global reg, pc, ir
+    arg1, = extract_args(ir, (0xf, 0))
     # TODO: how to handle value outside of range? clamp?
     print(chr(reg[arg1]))
     pc += 1
 
-def op_seed(code: int):
-    global reg, pc
-    arg1 = code & 0xf
+def op_seed():
+    global reg, pc, ir
+    arg1, = extract_args(ir, (0xf, 0))
     random.seed((reg[arg1]))
     pc += 1
 
-def op_rand(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = code & 0xf
+def op_rand():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
     lo = tc_b32_to_int(reg[arg1])
     hi = tc_b32_to_int(reg[arg2])
     reg[arg3] = tc_int_to_b32(random.randint(lo, hi))
     pc += 1
 
-def op_time(code: int):
-    global reg, pc
-    arg1 = code & 0xf
+def op_time():
+    global reg, pc, ir
+    arg1, = extract_args(ir, (0xf, 0))
     now = datetime.datetime.now()
     reg[arg1] = (now.hour * 3600 + now.minute * 60 + now.second) * 1000 + now.microsecond // 1000
     pc += 1
 
 
-def op_date(code: int):
-    global reg, pc
-    arg1 = code & 0xf
+def op_date():
+    global reg, pc, ir
+    arg1, = extract_args(ir, (0xf, 0))
     today = datetime.date.today()
-    reg[arg1] = today.year << 19 | today.month << 9 | today.day
+    reg[arg1] = today.year << 13 | today.month << 9 | today.day
     pc += 1
 
-def op_nop(_: int):
+def op_nop():
     global pc
     pc += 1
 
 # Arithmetic instructions
 
-def op_neg(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 4) >> 4
-    arg2 = code & 0xf
+def op_neg():
+    global reg, pc, ir
+    arg1, arg2 = extract_args(ir, (0xf, 4), (0xf, 0))
     reg[arg1] = tc_neg(reg[arg2])
     pc += 1
 
-def op_add(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4 
-    arg3 = code & 0xf
+def op_add():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
     reg[arg1] = tc_add(reg[arg2], reg[arg3])
     pc += 1
 
-def op_sub(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = code & 0xf
+def op_sub():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
     reg[arg1] = tc_sub(reg[arg2], reg[arg3])
     pc += 1
 
-def op_mul(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = code & 0xf
+def op_mul():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
     reg[arg1] = tc_mul(reg[arg2], reg[arg3])
     pc += 1
 
-def op_div(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = code & 0xf
+def op_div():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
     reg[arg1] = tc_div(reg[arg2], reg[arg3])
     pc += 1
 
-def op_mod(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = code & 0xf
-    reg[arg1] = reg[arg2] % reg[arg3]
+def op_mod():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
+    reg[arg1] = tc_mod(reg[arg2],  reg[arg3])
     pc += 1
 
-def op_fneg(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 4) >> 4
-    arg2 = (code & 0xf)
+def op_fneg():
+    global reg, pc, ir
+    arg1, arg2, = extract_args(ir, (0xf, 4), (0xf, 0))
     reg[arg1] = reg[arg2] ^ (1 << 31)
     pc += 1
 
-def op_fadd(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = (code & 0xf)
+def op_fadd():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
     reg[arg1] = fp_float_to_f32(fp_f32_to_float(reg[arg2]) + fp_f32_to_float(reg[arg3]))
     pc += 1
 
-def op_fsub(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = (code & 0xf)
+def op_fsub():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
     reg[arg1] = fp_float_to_f32(fp_f32_to_float(reg[arg2]) - fp_f32_to_float(reg[arg3]))
     pc += 1
 
-def op_fmul(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = (code & 0xf)
+def op_fmul():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
     reg[arg1] = fp_float_to_f32(fp_f32_to_float(reg[arg2]) * fp_f32_to_float(reg[arg3]))
     pc += 1
 
-def op_fdiv(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = (code & 0xf)
+def op_fdiv():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
     reg[arg1] = fp_float_to_f32(fp_f32_to_float(reg[arg2]) / fp_f32_to_float(reg[arg3]))
     pc += 1
 
 # Bitwise instructions
 
-def op_and(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = (code & 0xf)
+def op_and():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
     reg[arg1] = reg[arg2] & reg[arg3]
     pc += 1
 
-def op_or(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = (code & 0xf)
+def op_or():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
     reg[arg1] = reg[arg2] | reg[arg3]
     pc += 1
 
-def op_xor(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = (code & 0xf)
+def op_xor():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
     reg[arg1] = reg[arg2] ^ reg[arg3]
     pc += 1
 
-def op_not(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 4) >> 4
-    arg2 = (code & 0xf)
+def op_not():
+    global reg, pc, ir
+    arg1, arg2= extract_args(ir, (0xf, 4), (0xf, 0))
     reg[arg1] = ~reg[arg2]
     pc += 1
 
-def op_lshl(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = (code & 0xf)
+def op_lshl():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
     reg[arg1] = (reg[arg2] << reg[arg3]) & 0xffffffff
     pc += 1
 
-def op_lshr(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = (code & 0xf)
+def op_lshr():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
     reg[arg1] = (reg[arg2] >> reg[arg3]) & 0xffffffff
     pc += 1
 
-def op_ashl(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = (code & 0xf)
+def op_ashl():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
     sign = reg[arg2] & (1 << 31)
     temp = ((reg[arg2] ^ sign) << reg[arg3]) & 0xffffffff
     reg[arg1] = 0 if temp == 0 else temp | sign
     pc += 1
 
-def op_ashr(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 8) >> 8
-    arg2 = (code & 0xf << 4) >> 4
-    arg3 = (code & 0xf)
+def op_ashr():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
     sign = reg[arg2] & (1 << 31)
     temp = ((reg[arg2] ^ sign) >> reg[arg3]) & 0xffffffff
     reg[arg1] = 0 if temp == 0 else temp | sign
@@ -549,168 +512,141 @@ def op_ashr(code: int):
 
 # Jump Instructions
 
-def op_jumpn(code: int):
-    global pc
-    arg1 = code & 0xffff
+def op_jumpn():
+    global pc, ir
+    arg1, = extract_args(ir, (0xffff, 0))
     pc = arg1
 
-def op_jumpr(code: int):
-    global reg, pc
-    arg1 = code & 0xf
+def op_jumpr():
+    global reg, pc, ir
+    arg1, = extract_args(ir, (0xf, 0))
     pc = reg[arg1]
 
-def op_jeqzn(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 16) >> 16
-    arg2 = code & 0xffff
+def op_jeqzn():
+    global reg, pc, ir
+    arg1, arg2 = extract_args(ir, (0xf, 16), (0xffff, 0))
     pc = arg2 if reg[arg1] == 0 else pc + 1
 
-def op_jnezn(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 16) >> 16
-    arg2 = code & 0xffff
+def op_jnezn():
+    global reg, pc, ir
+    arg1, arg2 = extract_args(ir, (0xf, 16), (0xffff, 0))
     pc = arg2 if reg[arg1] != 0 else pc + 1
 
-def op_jgen(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 20) >> 20
-    arg2 = (code & 0xf << 16) >> 16 
-    arg3 = code & 0xffff
+def op_jgen():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 20), (0xf, 16), (0xffff, 0))
     pc = arg3 if reg[arg1] >= reg[arg2] else pc + 1
 
-def op_jlen(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 20) >> 20
-    arg2 = (code & 0xf << 16) >> 16
-    arg3 = code & 0xffff
+def op_jlen():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 20), (0xf, 16), (0xffff, 0))
     pc = arg3 if reg[arg1] <= reg[arg2] else pc + 1
 
-def op_jeqn(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 20) >> 20
-    arg2 = (code & 0xf << 16) >> 16
-    arg3 = code & 0xffff
+def op_jeqn():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 20), (0xf, 16), (0xffff, 0))
     pc = arg3 if reg[arg1] == reg[arg2] else pc + 1
 
-def op_jnen(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 20) >> 20
-    arg2 = (code & 0xf << 16) >> 16
-    arg3 = code & 0xffff
+def op_jnen():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 20), (0xf, 16), (0xffff, 0))
     pc = arg3 if reg[arg1] != reg[arg2] else pc + 1
 
-def op_jgtn(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 20) >> 20
-    arg2 = (code & 0xf << 16) >> 16
-    arg3 = code & 0xffff
+def op_jgtn():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 20), (0xf, 16), (0xffff, 0))
     pc = arg3 if reg[arg1] > reg[arg2] else pc + 1
 
-def op_jltn(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 20) >> 20
-    arg2 = (code & 0xf << 16) >> 16
-    arg3 = code & 0xffff
+def op_jltn():
+    global reg, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 20), (0xf, 16), (0xffff, 0))
     pc = arg3 if reg[arg1] < reg[arg2] else pc + 1
 
-def op_calln(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 16) >> 16
-    arg2 = code & 0xffff
+def op_calln():
+    global reg, pc, ir
+    arg1, arg2 = extract_args(ir, (0xf, 16), (0xffff, 0))
     # I think this is guaranteed to never be over integer limit
     reg[arg1] = pc + 1
     pc = arg2
 
 # Register instructions
 
-def op_setn(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 16) >> 16 
-    arg2 = code & 0xffff
+def op_setn():
+    global reg, pc, ir
+    arg1, arg2 = extract_args(ir, (0xf, 16), (0xffff, 0))
     reg[arg1] = tc_b16_to_b32(arg2)
     pc += 1
 
-def op_addn(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 16) >> 16
-    arg2 = code & 0xffff
+def op_addn():
+    global reg, pc, ir
+    arg1, arg2 = extract_args(ir, (0xf, 16), (0xffff, 0))
     reg[arg1] = tc_add(reg[arg1], tc_b16_to_b32(arg2))
     pc += 1
 
-def op_setf(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 16) >> 16 
-    arg2 = code & 0xffff
+def op_setf():
+    global reg, pc, ir
+    arg1, arg2 = extract_args(ir, (0xf, 16), (0xffff, 0))
     reg[arg1] = fp_f16_to_f32(arg2)
     pc += 1
 
-def op_addf(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 16) >> 16
-    arg2 = code & 0xffff
+def op_addf():
+    global reg, pc, ir
+    arg1, arg2 = extract_args(ir, (0xf, 16), (0xffff, 0))
     reg[arg1] = fp_float_to_f32(fp_f32_to_float(reg[arg1]) + fp_f32_to_float(reg[arg2]))
     pc += 1
 
-def op_copy(code: int):
-    global reg, pc
-    arg1 = (code & 0xf << 4) >> 4
-    arg2 = code & 0xf
+def op_copy():
+    global reg, pc, ir
+    arg1, arg2 = extract_args(ir, (0xf, 4), (0xf, 0))
     reg[arg1] = reg[arg2]
     pc += 1
 
 # Memory instructions
 
-def op_loadr(code: int):
-    global reg, mem, pc
-    arg1 = (code & 0xf << 4) >> 4
-    arg2 = code & 0xf
+def op_loadr():
+    global reg, mem, pc, ir
+    arg1, arg2 = extract_args(ir, (0xf, 4), (0xf, 0))
     reg[arg1] = mem[reg[arg2]]
     pc += 1
 
-def op_pushr(code: int):
-    global reg, mem, pc
+def op_pushr():
+    global reg, mem, pc, ir
     # check if sp == gp
     if reg[reg_to_bin["sp"]] == reg[reg_to_bin["gp"]]:
         sys.exit(f"Error: stack overflow attempting to execute mem['{pc}']; halting the machine")
-    arg1 = (code & 0xf << 4) >> 4
-    arg2 = code & 0xf
+    arg1, arg2 = extract_args(ir, (0xf, 4), (0xf, 0))
     mem[reg[arg2]] = reg[arg1]
     reg[arg2] = tc_sub(reg[arg2], 1)
     pc += 1
 
-def op_popr(code: int):
-    global reg, mem, pc
-    arg1 = (code & 0xf << 4) >> 4
-    arg2 = code & 0xf
+def op_popr():
+    global reg, mem, pc, ir
+    arg1, arg2 = extract_args(ir, (0xf, 4), (0xf, 0))
     reg[arg2] = tc_add(reg[arg2], 1)
     reg[arg1] = mem[reg[arg2]]
     pc += 1
 
-def op_loadn(code: int):
-    global reg, mem, pc
-    arg1 = (code & 0xf << 20) >> 20
-    arg2 = (code & 0xf << 16) >> 16
-    arg3 = code & 0xffff
+def op_loadn():
+    global reg, mem, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 20), (0xf, 16), (0xffff, 0))
     reg[arg1] = mem[tc_add(reg[arg2], tc_b16_to_b32(arg3))]
     pc += 1
 
-def op_storen(code: int):
-    global reg, mem, pc
-    arg1 = (code & 0xf << 20) >> 20
-    arg2 = (code & 0xf << 16) >> 16
-    arg3 = code & 0xffff
+def op_storen():
+    global reg, mem, pc, ir
+    arg1, arg2, arg3 = extract_args(ir, (0xf, 20), (0xf, 16), (0xffff, 0))
     mem[tc_add(reg[arg2], tc_b16_to_b32(arg3))] = reg[arg1]
     pc += 1
 
-def op_storer(code: int):
-    global reg, mem, pc
-    arg1 = (code & 0xf << 4) >> 4
-    arg2 = code & 0xf
+def op_storer():
+    global reg, mem, pc, ir
+    arg1, arg2 = extract_args(ir, (0xf, 4), (0xf, 0))
     mem[reg[arg2]] = reg[arg1]
     pc += 1
 
-def op_unimp(code: int):
-    sys.exit(f"Error: operation {bin_to_opcode[code >> 24]} unimplemented")
+def op_unimp():
+    global ir
+    sys.exit(f"Error: operation {bin_to_opcode[ir >> 24]} unimplemented")
 
 # TODO: where to put this? awkward
 instructions = {}
@@ -718,21 +654,34 @@ for op in opcode_to_bin.keys():
     func = "op_" + op
     instructions[op] = globals()[func] if func in globals() else op_unimp
 
-# TODO: test performance impact of this
-def extract_args(code: int, *args: tuple[int, int]) -> list[int]:
-    ret: list[int] = [] 
-    for arg in args:
-        mask, bit = arg
-        ret.append((code & mask << bit) >> bit)
-    return ret
+# Integer constants
 
+INT16_MIN  = -2 ** 15
+INT16_MAX  =  2 ** 15 - 1
+UINT16_MAX =  2 ** 16
+INT32_MIN  = -2 ** 31
+INT32_MAX  =  2 ** 31 - 1
+UINT32_MAX =  2 ** 32
+
+# Two's complement helper functions
+
+# TODO: report under/overflow
 def tc_int_to_b16(val: int) -> int:
+    while (val > INT16_MAX):
+        val -= UINT16_MAX
+    while (val < INT16_MIN):
+        val += UINT16_MAX
     if val < 0:
         val = -val
         val = (val ^ 0xffff) + 1
     return val
 
+# TODO: report under/overflow
 def tc_int_to_b32(val: int) -> int:
+    while (val > INT32_MAX):
+        val -= UINT32_MAX
+    while (val < INT32_MIN):
+        val += UINT32_MAX
     if val < 0:
         val = -val
         val = (val ^ 0xffffffff) + 1
@@ -752,14 +701,15 @@ def tc_b32_to_int(val: int) -> int:
 def tc_neg(val: int) -> int:
     return val ^ (1 << 31)
 
-# TODO: make sure this works 
+# TODO: verify under/overflow
 def tc_add(val1: int, val2: int) -> int:
     return (val1 + val2) & 0xffffffff
 
-# TODO: make sure this works 
+# TODO: verify under/overflow
 def tc_sub(val1: int, val2: int) -> int:
     return (val1 - val2) & 0xffffffff
 
+# TODO: verify under/overflow
 def tc_mul(val1: int, val2: int) -> int:
     if (val1 & (1 << 31)):
         val1 = val1 | (0xffffffff << 32)
@@ -774,6 +724,8 @@ def tc_div(val1: int, val2: int) -> int:
 def tc_mod(val1: int, val2: int) -> int:
     raise NotImplementedError
 
+# Floating point helper functions
+
 # TODO: optimize
 def fp_float_to_f16(val: float) -> int:
     if val == 0:
@@ -785,11 +737,11 @@ def fp_float_to_f16(val: float) -> int:
     else:
         sign = 0
 
-    # separate integer and decimal parts
+    # separate integer and fractional parts
     int_bin = int(val)
     frac_part = val - int_bin
 
-    # determine bit lengths for exponent + noramlization
+    # determine bit lengths for exponent + normalization
     len_int_bin = int_bin.bit_length()
     len_frac_part = 11 - len_int_bin
 
@@ -825,6 +777,15 @@ def fp_f16_to_f32(val: int) -> int:
 def fp_f32_to_float(val: int) -> float:
     # TODO: test speed between struct and manual conversion
     return struct.unpack("!f", val.to_bytes(4))[0]
+
+def extract_args(code: int, *args: tuple[int, int]) -> list[int]:
+    ret: list[int] = [] 
+    for arg in args:
+        mask, bit = arg
+        ret.append((code & mask << bit) >> bit)
+    return ret
+
+# Misc. helper functions
 
 # Returns True if s encodes an integer, and False otherwise.
 def isNum(s: str) -> bool:
