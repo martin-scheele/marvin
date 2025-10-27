@@ -73,6 +73,17 @@ def main():
     if not inFile.endswith(".marv") or not os.path.exists(inFile):
         sys.exit(f"Error: invalid file '{inFile}'")
 
+    # Validate .marv and extract tokens.
+    tuples = validate_marv(inFile)
+
+    # Assemble the instructions into machine codes.
+    machineCodes = assemble(tuples, verbose)
+
+    # Simulate the machine codes.
+    if len(machineCodes) > 0:
+        simulate(machineCodes, debug)
+
+def validate_marv(inFile: str) -> list[tuple[int, int, str, *tuple[str, ...]]]:
     with open(inFile, "r") as fh:
         lines = fh.readlines()
 
@@ -102,11 +113,10 @@ def main():
         expectedID += 1
 
         # Validate the instruction arguments.
-        # TODO: validate new instructions
         id, opcode, args = int(toks[0]), toks[1], toks[2:]
         if opcode in {"halt", "nop"}:
-                if len(args) != 0:
-                    sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 0 arguments")
+            if len(args) != 0:
+                sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 0 arguments")
         elif opcode in {"readi", "readf", "readc", "writei", "writef", "writec", "seed", "time", "date", "jumpr"}:
             if len(args) != 1:
                 sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 1 argument, rX")
@@ -158,10 +168,10 @@ def main():
                 sys.exit(f"Error {inFile}@{lineno}: invalid number '{args[2]}'")
         else:
             sys.exit(f"Error {inFile}@{lineno}: invalid instruction '{opcode}'")
+
         tuples.append((lineno, id, opcode, *toks[2:]))
 
     # Additional validation of instruction arguments.
-    # TODO: additional validation for new instructions
     for t in tuples:
         lineno, id, opcode, args = t[0], t[1], t[2], t[3:]
         if opcode in {"jumpn"} and int(args[0]) >= len(tuples):
@@ -175,71 +185,77 @@ def main():
         elif opcode in {"jeqn", "jgen", "jgtn", "jlen", "jltn", "jnen"} and int(args[2]) >= len(tuples):
             sys.exit(f"Error {inFile}@{lineno}: invalid instruction address '{args[2]}'")
 
-    # Assemble the instructions into machine codes.
-    machineCodes = assemble(tuples, verbose)
+    return tuples
 
-    # Simulate the machine codes.
-    if len(machineCodes) > 0:
-        simulate(machineCodes, debug)
 
 # Assembles the instructions in tuples and returns a list containing the corresponding machine
 # codes. Prints the assembled instructions to stdout if verbose is True.
 def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]], verbose: bool) -> list[int]:
-    machineCodes: list[int] = []
-    verboseOutput: list[str] = []
+    machine_codes: list[int] = []
+    verbose_output: list[str] = []
 
     for t in tuples:
         id, opcode, args = t[1], t[2], t[3:]
-        bArg1, bArg2, bArg3 = 0, 0, 0
+        byte0 = opcode_to_bin[opcode]
+        byte1 = byte2 = byte3 = 0
 
-        # TODO: assemble new instructions
         if opcode in {"halt", "nop"}:
-            bArg1, bArg2, bArg3 = 0, 0, 0
-        elif opcode in {"jumpr", "readi", "set0", "set1", "writei"}:
-            bArg1, bArg2, bArg3 = 0, 0, reg_to_bin[args[0]]
+            byte1 = 0
+            byte2 = 0
+            byte3 = 0
+        elif opcode in {"readi", "readf", "readc", "writei", "writef", "writec", "seed", "time", "date", "jumpr"}:
+            byte1 = 0
+            byte2 = 0
+            byte3 = reg_to_bin[args[0]]
         elif opcode in {"jumpn"}:
-            val = int(args[0])
-            bArg1, bArg2, bArg3 = 0, val >> 8, val & 0xff
-        elif opcode in {"copy", "loadr", "neg", "popr", "pushr", "storer"}:
-            bArg1, bArg2, bArg3 = 0, 0, reg_to_bin[args[0]] << 4 | reg_to_bin[args[1]]
-        elif opcode in {"addn", "setn"}:
-            bArg1 = reg_to_bin[args[0]]
+            val = tc_int_to_b16(int(args[0]))
+            byte1 = 0
+            byte2 = val >> 8
+            byte3 = val & 0xff
+        elif opcode in {"neg", "fneg", "lshl", "lshr", "ashl", "ashr", "copy", "pushr", "popr", "loadr", "storer"}:
+            byte1 = 0
+            byte2 = 0
+            byte3 = reg_to_bin[args[0]] << 4 | reg_to_bin[args[1]]
+        elif opcode in {"setn", "addn", "jeqzn", "jnezn", "calln"}:
             val = tc_int_to_b16(int(args[1]))
-            bArg2, bArg3 = val >> 8, val & 0xff
-        elif opcode in {"calln", "jeqzn", "jnezn"}:
-            bArg1 = reg_to_bin[args[0]]
-            val = int(args[1])
-            bArg2, bArg3 =  val >> 8, val & 0xff
-        elif opcode in {"add", "div", "mod", "mul", "sub"}:
-            bArg1, bArg2, bArg3 = 0, reg_to_bin[args[0]], reg_to_bin[args[1]] << 4 | reg_to_bin[args[2]]
-        elif opcode in {"jeqn", "jgen", "jgtn", "jlen", "jltn", "jnen"}:
-            bArg1 = reg_to_bin[args[0]] << 4 | reg_to_bin[args[1]]
-            val = int(args[2])
-            bArg2, bArg3 = val >> 8, val & 0xff
-        elif opcode in {"loadn", "storen"}:
-            bArg1 = reg_to_bin[args[0]] << 4 | reg_to_bin[args[1]]
+            byte1 = reg_to_bin[args[0]]
+            byte2 = val >> 8
+            byte3 = val & 0xff
+        elif opcode in {"setf", "addf"}:
+            val = fp_float_to_f16(float(args[1]))
+            byte1 = reg_to_bin[args[0]]
+            byte2 = val >> 8
+            byte3 = val & 0xff
+        elif opcode in {"rand", "add", "sub", "div", "mul", "mod", "fadd", "fsub", "fdiv", "fmul", "and", "or", "xor", "not"}:
+            byte1 = 0
+            byte2 = reg_to_bin[args[0]]
+            byte3 = reg_to_bin[args[1]] << 4 | reg_to_bin[args[2]]
+        elif opcode in {"jgen", "jlen", "jeqn", "jnen", "jgtn", "jltn", "loadn", "storen"}:
             val = tc_int_to_b16(int(args[2]))
-            bArg2, bArg3 = val >> 8, val & 0xff
+            byte1 = reg_to_bin[args[0]] << 4 | reg_to_bin[args[1]]
+            byte2 = val >> 8
+            byte3 = val & 0xff
+        else:
+            sys.exit(f"Error: cannot assemble instruction {opcode}. Aborting.")
 
-        op = opcode_to_bin[opcode]
-        code = op << 24 | bArg1 << 16 | bArg2 << 8 | bArg3
-        machineCodes.append(code)
+        code = byte0 << 24 | byte1 << 16 | byte2 << 8 | byte3
+        machine_codes.append(code)
 
         if verbose:
-            bArg1 = format(bArg1, '08b')
-            bArg2 = format(bArg2, '08b')
-            bArg3 = format(bArg3, '08b')
-
-            binCode = f"{id: >5}: {format(opcode_to_bin[opcode], '08b')} {bArg1} {bArg2} {bArg3}"
+            byte0_str = format(byte0, "08b")
+            byte1_str = format(byte1, "08b")
+            byte2_str = format(byte2, "08b")
+            byte3_str = format(byte3, "08b")
+            binCode = f"{id: >5}: {byte0_str} {byte1_str} {byte2_str} {byte3_str}"
             asmCode = f"{id: >5}: {opcode: <6} {" ".join(args)}"
-            verboseOutput.append(f"{binCode: <50} {asmCode}")
+            verbose_output.append(f"{binCode: <50} {asmCode}")
 
     if verbose:
-        for s in verboseOutput:
+        for s in verbose_output:
             print(s)
         print()
 
-    return machineCodes
+    return machine_codes
 
 # Global CPU variables.
 reg = [0] * 16     # registers
@@ -248,7 +264,7 @@ pc = 0             # program counter
 ir = 0             # instruction register
 
 # Simulate the assembled instructions in machineCodes.
-def simulate(machineCodes: list[int], debug: bool):
+def simulate(machine_codes: list[int], debug: bool):
     global reg, mem, pc, ir
 
     # Initialize the frame and stack pointers to 65535 (the base address of the stack).
@@ -258,14 +274,14 @@ def simulate(machineCodes: list[int], debug: bool):
     reg[reg_to_bin["gp"]] = 8192
 
     # Load the machine codes into memory starting at location 0.
-    for i, v in enumerate(machineCodes):
+    for i, v in enumerate(machine_codes):
         mem[i] = v
         # TODO: check for maximum text size
 
     while True:
         # Fetch the next instruction to simulate.
         try:
-            ir = machineCodes[pc]
+            ir = machine_codes[pc]
         except IndexError:
             sys.exit(f"Error: attempted to execute mem['{pc}']; halting the machine")
 
