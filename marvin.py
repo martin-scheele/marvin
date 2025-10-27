@@ -23,9 +23,9 @@ opcode_to_bin = {
     "writei": 0b00000100, "writef": 0b00000101, "writec": 0b00000110, "seed":   0b00000111,
     "rand":   0b00001000, "time":   0b00001001, "date":   0b00001010, "nop":    0b00001111,
     # arithmetic instructions
-    "neg":    0b00010000, "add":    0b00010001, "sub":    0b00010010, "mul":    0b00010011,
-    "div":    0b00010100, "mod":    0b00010101, "fneg":   0b00010110, "fadd":   0b00010111,
-    "fsub":   0b00011000, "fmul":   0b00011001, "fdiv":   0b00011010,
+    "add":    0b00010000, "sub":    0b00010001, "mul":    0b00010010, "div":    0b00010011,
+    "mod":    0b00010100, "neg":    0b00010101, "fadd":   0b00010110, "fsub":   0b00010111,
+    "fmul":   0b00011000, "fdiv":   0b00011001, "fneg":   0b00011010,
     # bitwise instructions
     "and":    0b00100000, "or":     0b00100001, "xor":    0b00100010, "not":    0b00100011,
     "lshl":   0b00100100, "lshr":   0b00100101, "ashl":   0b00100110, "ashr":   0b00100111,
@@ -95,7 +95,7 @@ def main():
         toks = line.split()
         if len(toks) < 2:
             sys.exit(f"Error {inFile}@{lineno}: not enough tokens")
-        if not isNum(toks[0]) or int(toks[0]) != expectedID:
+        if not is_int(toks[0]) or int(toks[0]) != expectedID:
             sys.exit(f"Error {inFile}@{lineno}: invalid instruction ID '{toks[0]}'")
         if toks[1] not in opcode_to_bin:
             sys.exit(f"Error {inFile}@{lineno}: invalid instruction '{toks[1]}'")
@@ -105,50 +105,57 @@ def main():
         # TODO: validate new instructions
         id, opcode, args = int(toks[0]), toks[1], toks[2:]
         if opcode in {"halt", "nop"}:
-            if len(args) != 0:
-                sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 0 arguments")
-        elif opcode in {"jumpr", "readi", "set0", "set1", "writei"}:
+                if len(args) != 0:
+                    sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 0 arguments")
+        elif opcode in {"readi", "readf", "readc", "writei", "writef", "writec", "seed", "time", "date", "jumpr"}:
             if len(args) != 1:
                 sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 1 argument, rX")
-            if not valid_reg(toks[2]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid register '{toks[2]}'")
-        elif opcode in {"jumpn"}:
+            if not valid_reg(args[0]):
+                sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[0]}'")
+        elif opcode == "jumpn":
             if len(args) != 1:
                 sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 1 argument, N")
-            if not isNum(toks[2]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid number '{toks[2]}'")
-        elif opcode in {"copy", "loadr", "neg", "popr", "pushr", "storer"}:
+            if not is_int(args[0]):
+                sys.exit(f"Error {inFile}@{lineno}: invalid number '{args[0]}'")
+        elif opcode in {"neg" , "fneg", "lshl", "lshr", "ashl", "ashr", "copy", "pushr", "popr", "loadr", "storer"}:
             if len(args) != 2:
-                sys.exit(f"Error {inFile}@{lineno}: '{toks[1]}' expects 2 arguments, rX rY")
-            if not valid_reg(toks[2]):
+                sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 2 arguments, rX rY")
+            if not valid_reg(args[0]):
                 sys.exit(f"Error {inFile}@{lineno}: invalid register '{toks[2]}'")
-            if not valid_reg(toks[3]):
+            if not valid_reg(args[0]):
                 sys.exit(f"Error {inFile}@{lineno}: invalid register '{toks[3]}'")
-        elif opcode in {"addn", "calln", "jeqzn", "jnezn", "setn"}:
+        elif opcode in {"jeqzn", "jnezn", "calln", "setn", "addn"}:
             if len(args) != 2:
-                sys.exit(f"Error {inFile}@{lineno}: '{toks[1]}' expects 2 arguments, rX N")
-            if not valid_reg(toks[2]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid register '{toks[2]}'")
-            if not isNum(toks[3]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid number '{toks[3]}'")
-        elif opcode in {"add", "div", "mod", "mul", "sub"}:
+                sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 2 arguments, rX N")
+            if not valid_reg(args[0]):
+                sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[0]}'")
+            if not is_int(args[1]):
+                sys.exit(f"Error {inFile}@{lineno}: invalid number '{args[1]}'")
+        elif opcode in {"setf", "addf"}:
+            if len(args) != 2:
+                sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 2 arguments, rX F")
+            if not valid_reg(args[0]):
+                sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[0]}'")
+            if not is_float(args[1]):
+                sys.exit(f"Error {inFile}@{lineno}: invalid number '{args[1]}'")
+        elif opcode in {"rand", "add", "sub", "mul", "div", "mod", "fadd", "fsub", "fmul", "fdiv", "and", "or", "xor", "not"}:
             if len(args) != 3:
-                sys.exit(f"Error {inFile}@{lineno}: '{toks[1]}' expects 3 arguments, rX rY rZ")
-            if not valid_reg(toks[2]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid register '{toks[2]}'")
-            if not valid_reg(toks[3]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid register '{toks[3]}'")
-            if not valid_reg(toks[4]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid register '{toks[4]}'")
-        elif opcode in {"jeqn", "jgen", "jgtn", "jlen", "jltn", "jnen", "loadn", "storen"}:
+                sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 3 arguments, rX rY rZ")
+            if not valid_reg(args[0]):
+                sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[0]}'")
+            if not valid_reg(args[1]):
+                sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[1]}'")
+            if not valid_reg(args[2]):
+                sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[2]}'")
+        elif opcode in {"jgen", "jlen", "jeqn", "jnen", "jgtn", "jltn", "loadn", "storen"}:
             if len(args) != 3:
-                sys.exit(f"Error {inFile}@{lineno}: '{toks[1]}' expects 3 arguments, rX rY N")
-            if not valid_reg(toks[2]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid register '{toks[2]}'")
-            if not valid_reg(toks[3]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid register '{toks[3]}'")
-            if not isNum(toks[4]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid number '{toks[4]}'")
+                sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 3 arguments, rX rY N")
+            if not valid_reg(args[0]):
+                sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[0]}'")
+            if not valid_reg(args[1]):
+                sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[1]}'")
+            if not is_int(args[2]):
+                sys.exit(f"Error {inFile}@{lineno}: invalid number '{args[2]}'")
         else:
             sys.exit(f"Error {inFile}@{lineno}: invalid instruction '{opcode}'")
         tuples.append((lineno, id, opcode, *toks[2:]))
@@ -788,13 +795,20 @@ def extract_args(code: int, *args: tuple[int, int]) -> list[int]:
 # Misc. helper functions
 
 # Returns True if s encodes an integer, and False otherwise.
-def isNum(s: str) -> bool:
-    ans = True
+def is_int(s: str) -> bool:
     try:
-        _ = int(s)
+        num = int(s)
+        # TODO: check to disclude floats
+        return True
     except ValueError:
-        ans = False
-    return ans
+        return False
+
+def is_float(s: str) -> bool:
+    try:
+        _ = float(s)
+        return True
+    except ValueError:
+        return False
 
 # Return True if n is a valid signed 16-bit integer, and False otherwise.
 def valid_int(n: int) -> bool:
