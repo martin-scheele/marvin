@@ -70,6 +70,12 @@ opcode_to_argmask = {
     "loadr":  "rr",  "storer": "rr",
 }
 
+# Maps opcodes to their costs.
+opcode_to_cost = {opcode: 2 if opcode_to_bin[opcode] >> 4 == 0b0101 else 1 for opcode in opcode_to_bin.keys()}
+
+# Maps opcodes to their call counts.
+opcode_to_calls: dict[str, int] = {opcode: 0 for opcode in opcode_to_bin.keys()}
+
 # Maps register names to their binary 4-bit codes.
 reg_to_bin = {
     "r0":  0b0000, "r1":  0b0001, "r2":  0b0010, "r3":  0b0011,
@@ -91,6 +97,7 @@ reg_curr_type: dict[int, builtins.type] = {reg_to_bin[reg]: builtins.int for reg
 verbose = False
 verbose_output: list[str] = []
 debug = False
+count_calls = False
 
 def main():
     # Process command-line inputs and exit if they are not as expected.
@@ -98,12 +105,14 @@ def main():
     _ = parser.add_argument("filename", help="input .marv file")
     _ = parser.add_argument("-v", "--verbose", action="store_true", help="enable verbose output")
     _ = parser.add_argument("-d", "--debug", action="store_true", help="enable debug mode")
+    _ = parser.add_argument("-c", "--count", action="store_true", help="count instruction calls")
     args = parser.parse_args()
 
-    global debug, verbose
+    global debug, verbose, count_calls
     inFile = args.filename
     verbose = args.verbose
     debug = args.debug
+    count_calls = args.count
 
     if not inFile.endswith(".marv") or not os.path.exists(inFile):
         sys.exit(f"Error: invalid file '{inFile}'")
@@ -271,6 +280,11 @@ def simulate(machine_code: list[int]):
         # Simulate the instruction for the opcode.
         instructions[opcode](args)
 
+        # Count instruction calls
+        if count_calls:
+            opcode_to_calls[opcode] += 1
+            # TODO: actually delay and visualize
+
 def debug_exec():
     global reg, mem, pc, ir
     opcode = bin_to_opcode[ir >> 24]
@@ -305,6 +319,8 @@ def format_reg(regbin: int) -> str:
 # System Instructions
 
 def op_halt(_):
+    if count_calls:
+        print_opcode_cost()
     sys.exit()
 
 def op_readi(args: list[int]):
@@ -792,6 +808,10 @@ def print_verbose_output():
         print(s)
     print()
 
+def print_opcode_cost():
+    for k, v in opcode_to_calls.items():
+        if v > 0:
+            print(f"{k: <6}: {v * opcode_to_cost[k]}")
 
 if __name__ == "__main__":
     main()
