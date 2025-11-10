@@ -45,6 +45,31 @@ opcode_to_bin = {
 # Maps 8-bit binary codes to the opcodes they represent.
 bin_to_opcode = {opcode_to_bin[opcode]: opcode for opcode in opcode_to_bin.keys()}
 
+# Maps opcodes to their symbolic argument masks.
+opcode_to_argmask = {
+    # system instructions
+    "halt":   "",    "readi":  "r",   "readf":  "r",   "readc":  "r",
+    "writei": "r",   "writef": "r",   "writec": "r",   "seed":   "r",
+    "rand":   "rrr", "time":   "r",   "date":   "r",   "nop":    "",
+    # arithmetic instructions
+    "add":    "rrr", "sub":    "rrr", "mul":    "rrr", "div":    "rrr",
+    "mod":    "rrr", "neg":    "rr",  "fadd":   "rrr", "fsub":   "rrr",
+    "fmul":   "rrr", "fdiv":   "rrr", "fneg":   "rr",
+    # bitwise instructions
+    "and":    "rrr", "or":     "rrr", "xor":    "rrr", "not":    "rrr",
+    "lshl":   "rr",  "lshr":   "rr",  "ashl":   "rr",  "ashr":   "rr",
+    # jump instructions
+    "jumpn":  "n",   "jumpr":  "r",   "jeqzn":  "rn",  "jnezn":  "rn",
+    "jgen":   "rrn", "jlen":   "rrn", "jeqn":   "rrn", "jnen":   "rrn",
+    "jgtn":   "rrn", "jltn":   "rrn", "calln":  "rn",
+    # register instructions
+    "setn":   "rn",  "addn":   "rn",  "setf":   "rf",  "addf":   "rf",
+    "copy":   "rr",
+    # memory instructions
+    "pushr":  "rr",  "popr":   "rr",  "loadn":  "rrn", "storen": "rrn",
+    "loadr":  "rr",  "storer": "rr",
+}
+
 # Maps register names to their binary 4-bit codes.
 reg_to_bin = {
     "r0":  0b0000, "r1":  0b0001, "r2":  0b0010, "r3":  0b0011,
@@ -59,8 +84,12 @@ reg_to_bin = {
     "rv":  0b1100, "fp":  0b1101, "sp":  0b1110, "gp":  0b1111
 }
 
+# Maps registers to the current type of their contents.
 reg_curr_type: dict[int, builtins.type] = {reg_to_bin[reg]: builtins.int for reg in reg_to_bin.keys()}
 
+# Global argument variables.
+verbose = False
+verbose_output: list[str] = []
 debug = False
 
 def main():
@@ -71,9 +100,9 @@ def main():
     _ = parser.add_argument("-d", "--debug", action="store_true", help="enable debug mode")
     args = parser.parse_args()
 
+    global debug, verbose
     inFile = args.filename
     verbose = args.verbose
-    global debug
     debug = args.debug
 
     if not inFile.endswith(".marv") or not os.path.exists(inFile):
@@ -83,7 +112,11 @@ def main():
     tuples = validate_marv(inFile)
 
     # Assemble the instructions into machine codes.
-    machineCodes = assemble(tuples, verbose)
+    machineCodes = assemble(tuples)
+
+    # Print verbose output
+    if verbose:
+        print_verbose_output()
 
     # Simulate the machine codes.
     if len(machineCodes) > 0:
@@ -120,64 +153,25 @@ def validate_marv(inFile: str) -> list[tuple[int, int, str, *tuple[str, ...]]]:
 
         # Validate the instruction arguments.
         id, opcode, args = int(toks[0]), toks[1], toks[2:]
-        if opcode in {"halt", "nop"}:
-            if len(args) != 0:
-                sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 0 arguments")
-        elif opcode in {"readi", "readf", "readc", "writei", "writef", "writec", "seed", "time", "date", "jumpr"}:
-            if len(args) != 1:
-                sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 1 argument, rX")
-            if not valid_reg(args[0]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[0]}'")
-        elif opcode == "jumpn":
-            if len(args) != 1:
-                sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 1 argument, N")
-            if not is_int(args[0]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid number '{args[0]}'")
-        elif opcode in {"neg" , "fneg", "lshl", "lshr", "ashl", "ashr", "copy", "pushr", "popr", "loadr", "storer"}:
-            if len(args) != 2:
-                sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 2 arguments, rX rY")
-            if not valid_reg(args[0]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid register '{toks[2]}'")
-            if not valid_reg(args[0]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid register '{toks[3]}'")
-        elif opcode in {"jeqzn", "jnezn", "calln", "setn", "addn"}:
-            if len(args) != 2:
-                sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 2 arguments, rX N")
-            if not valid_reg(args[0]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[0]}'")
-            if not is_int(args[1]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid number '{args[1]}'")
-        elif opcode in {"setf", "addf"}:
-            if len(args) != 2:
-                sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 2 arguments, rX F")
-            if not valid_reg(args[0]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[0]}'")
-            if not is_float(args[1]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid number '{args[1]}'")
-        elif opcode in {"rand", "add", "sub", "mul", "div", "mod", "fadd", "fsub", "fmul", "fdiv", "and", "or", "xor", "not"}:
-            if len(args) != 3:
-                sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 3 arguments, rX rY rZ")
-            if not valid_reg(args[0]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[0]}'")
-            if not valid_reg(args[1]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[1]}'")
-            if not valid_reg(args[2]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[2]}'")
-        elif opcode in {"jgen", "jlen", "jeqn", "jnen", "jgtn", "jltn", "loadn", "storen"}:
-            if len(args) != 3:
-                sys.exit(f"Error {inFile}@{lineno}: '{opcode}' expects 3 arguments, rX rY N")
-            if not valid_reg(args[0]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[0]}'")
-            if not valid_reg(args[1]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[1]}'")
-            if not is_int(args[2]):
-                sys.exit(f"Error {inFile}@{lineno}: invalid number '{args[2]}'")
-        else:
-            sys.exit(f"Error {inFile}@{lineno}: invalid instruction '{opcode}'")
+        if len(args) != len(opcode_to_argmask[opcode]):
+            # TODO: more verbose error: e.g. def argmask_to_str for argument types
+            sys.exit(f"Error {inFile}@{lineno}: opcode expects {len(opcode_to_argmask[opcode])} arguments")
+        for i, c in enumerate(opcode_to_argmask[opcode]):
+            if c == "r":
+                if not valid_reg(args[i]):
+                    sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[i]}'")
+            elif c == "n":
+                if not is_int(args[i]):
+                    sys.exit(f"Error {inFile}@{lineno}: invalid number '{args[i]}'")
+            elif c == "f":
+                if not is_float(args[i]):
+                    sys.exit(f"Error {inFile}@{lineno}: invalid number '{args[i]}'")
 
+        # Append valid tuple.
         tuples.append((lineno, id, opcode, *toks[2:]))
 
     # Additional validation of instruction arguments.
+    # TODO: setf, addf?
     for t in tuples:
         lineno, id, opcode, args = t[0], t[1], t[2], t[3:]
         if opcode in {"jumpn"} and int(args[0]) >= len(tuples):
@@ -196,111 +190,86 @@ def validate_marv(inFile: str) -> list[tuple[int, int, str, *tuple[str, ...]]]:
 
 # Assembles the instructions in tuples and returns a list containing the corresponding machine
 # codes. Prints the assembled instructions to stdout if verbose is True.
-def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]], verbose: bool) -> list[int]:
-    machine_codes: list[int] = []
-    verbose_output: list[str] = []
+def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]]) -> list[int]:
+    machine_code: list[int] = []
 
     for t in tuples:
         id, opcode, args = t[1], t[2], t[3:]
-        byte0 = opcode_to_bin[opcode]
-        byte1 = byte2 = byte3 = 0
 
-        if opcode in {"halt", "nop"}:
-            byte1 = 0
-            byte2 = 0
-            byte3 = 0
-        elif opcode in {"readi", "readf", "readc", "writei", "writef", "writec", "seed", "time", "date", "jumpr"}:
-            byte1 = 0
-            byte2 = 0
-            byte3 = reg_to_bin[args[0]]
-        elif opcode in {"jumpn"}:
-            val = tc_int_to_b16(int(args[0]))
-            byte1 = 0
-            byte2 = val >> 8
-            byte3 = val & 0xff
-        elif opcode in {"neg", "fneg", "lshl", "lshr", "ashl", "ashr", "copy", "pushr", "popr", "loadr", "storer"}:
-            byte1 = 0
-            byte2 = 0
-            byte3 = reg_to_bin[args[0]] << 4 | reg_to_bin[args[1]]
-        elif opcode in {"setn", "addn", "jeqzn", "jnezn", "calln"}:
-            val = tc_int_to_b16(int(args[1]))
-            byte1 = reg_to_bin[args[0]]
-            byte2 = val >> 8
-            byte3 = val & 0xff
-        elif opcode in {"setf", "addf"}:
-            val = fp_float_to_f16(float(args[1]))
-            byte1 = reg_to_bin[args[0]]
-            byte2 = val >> 8
-            byte3 = val & 0xff
-        elif opcode in {"rand", "add", "sub", "div", "mul", "mod", "fadd", "fsub", "fdiv", "fmul", "and", "or", "xor", "not"}:
-            byte1 = 0
-            byte2 = reg_to_bin[args[0]]
-            byte3 = reg_to_bin[args[1]] << 4 | reg_to_bin[args[2]]
-        elif opcode in {"jgen", "jlen", "jeqn", "jnen", "jgtn", "jltn", "loadn", "storen"}:
-            val = tc_int_to_b16(int(args[2]))
-            byte1 = reg_to_bin[args[0]] << 4 | reg_to_bin[args[1]]
-            byte2 = val >> 8
-            byte3 = val & 0xff
-        else:
-            sys.exit(f"Error: cannot assemble instruction {opcode}. Aborting.")
+        # TODO: do something that is not this...
+        byte_list: list[int] = [opcode_to_bin[opcode], 0, 0, 0]
+        curr_byte = 3
+        nibble = 0
+        i = len(args) - 1
+        for c in reversed(opcode_to_argmask[opcode]):
+            if c == "r":
+                byte_list[curr_byte] |= reg_to_bin[args[i]] << nibble * 4
+                nibble = (nibble + 1) % 2
+                if nibble == 0:
+                    curr_byte -= 1
+            elif c == "n":
+                val = tc_int_to_b16(int(args[i]))
+                byte_list[curr_byte] = val & 0xff
+                byte_list[curr_byte - 1] = val >> 8
+                curr_byte -= 2
+            elif c == "f":
+                val = fp_float_to_f16(float(args[i]))
+                byte_list[curr_byte] = val & 0xff
+                byte_list[curr_byte - 1] = val >> 8
+                curr_byte -= 2
+            i -= 1
 
-        code = byte0 << 24 | byte1 << 16 | byte2 << 8 | byte3
-        machine_codes.append(code)
+        code = byte_list[0] << 24 | byte_list[1] << 16 | byte_list[2] << 8 | byte_list[3]
+        machine_code.append(code)
 
-        if verbose:
-            byte0_str = format(byte0, "08b")
-            byte1_str = format(byte1, "08b")
-            byte2_str = format(byte2, "08b")
-            byte3_str = format(byte3, "08b")
-            binCode = f"{id: >5}: {byte0_str} {byte1_str} {byte2_str} {byte3_str}"
+        if verbose or debug:
+            binCode = f"{id: >5}: {" ".join([format(byte, "08b") for byte in byte_list])}"
             asmCode = f"{id: >5}: {opcode: <6} {" ".join(args)}"
             verbose_output.append(f"{binCode: <50} {asmCode}")
 
-    if verbose:
-        for s in verbose_output:
-            print(s)
-        print()
+    return machine_code
 
-    return machine_codes
 
 # Global CPU variables.
-reg = [0] * 16     # registers
-mem = [0] * 65536  # main memory
-pc = 0             # program counter
-ir = 0             # instruction register
+reg = [0] * 16      # registers
+mem = [0] * 65536   # main memory
+pc = 0              # program counter
+ir = 0              # instruction register
 
 # Simulate the assembled instructions in machineCodes.
-def simulate(machine_codes: list[int]):
-    global reg, mem, pc, ir
+def simulate(machine_code: list[int]):
+    global reg, mem, ir
 
-    # Initialize the frame and stack pointers to 65535 (the base address of the stack).
+    # Initialize the frame, stack, and global pointers
     reg[reg_to_bin["fp"]] = reg[reg_to_bin["sp"]] = 65535
-
-    # Initialize the global pointer to 8192 (end of text segment).
     reg[reg_to_bin["gp"]] = 8192
 
-    # Load the machine codes into memory starting at location 0.
-    for i, v in enumerate(machine_codes):
+    # Load the machine code into memory starting at location 0.
+    for i, v in enumerate(machine_code):
         mem[i] = v
-        # TODO: check for maximum text size
 
     while True:
         # Fetch the next instruction to simulate.
         try:
-            ir = machine_codes[pc]
+            ir = machine_code[pc]
         except IndexError:
             sys.exit(f"Error: attempted to execute mem['{pc}']; halting the machine")
 
-        # Debug stub
-        if debug:
+        # Conditionally execute the debugger.
+        if debug: 
             debug_exec()
 
-        # Extract the opcode.
+        # Extract the opcode from the instruction register.
         opcode = bin_to_opcode[ir >> 24]
 
-        # Simulate the instruction given by opcode.
-        # TODO: extract args out here somehow, like HMMM?
-        instructions[opcode]()
+        # Extract arguments from the instruction register.
+        args = extract_args(ir, opcode_to_argmask[opcode])
+
+        # Track register type
+        # track_register_type(opcode, args)
+
+        # Simulate the instruction for the opcode.
+        instructions[opcode](args)
 
 def debug_exec():
     global reg, mem, pc, ir
@@ -335,12 +304,11 @@ def format_reg(regbin: int) -> str:
 
 # System Instructions
 
-def op_halt():
+def op_halt(_):
     sys.exit()
 
-def op_readi():
-    global reg, pc, ir
-    arg1, = extract_args(ir, (0xf, 0))
+def op_readi(args: list[int]):
+    global reg, pc
     while True:
         try:
             x = int(input())
@@ -349,16 +317,12 @@ def op_readi():
             raise ValueError
         except ValueError:
             print("Illegal input: input must be a number must be in [-32768, 32767]")
-    reg[arg1] = tc_int_to_b32(x)
+    reg[args[0]] = tc_int_to_b32(x)
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
 
-
-def op_readf():
-    global reg, pc, ir
-    arg1, = extract_args(ir, (0xf, 0))
+def op_readf(args: list[int]):
+    global reg, pc
     while True:
         try:
             x = float(input())
@@ -366,15 +330,11 @@ def op_readf():
         except ValueError:
             # TODO: better error message
             print("Illegal input: input must be a number")
-    reg[arg1] = fp_float_to_f32(x)
+    reg[args[0]] = fp_float_to_f32(x)
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.float
-
-def op_readc():
-    global reg, pc, ir
-    arg1, = extract_args(ir, (0xf, 0))
+def op_readc(args: list[int]):
+    global reg, pc
     while True:
         try:
             # TODO: OS compliant getch()
@@ -383,418 +343,270 @@ def op_readc():
             break
         except Exception:
             pass
-    reg[arg1] = ord(x)
+    reg[args[0]] = ord(x)
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.str
-
-def op_writei():
-    global reg, pc, ir
-    arg1, = extract_args(ir, (0xf, 0))
-    print(tc_b32_to_int(reg[arg1]))
+def op_writei(args: list[int]):
+    global pc
+    print(tc_b32_to_int(reg[args[0]]))
     pc += 1
 
-def op_writef():
-    global reg, pc, ir
-    arg1, = extract_args(ir, (0xf, 0))
-    print(fp_f32_to_float(reg[arg1]))
+def op_writef(args: list[int]):
+    global pc
+    print(fp_f32_to_float(reg[args[0]]))
     pc += 1
 
-def op_writec():
-    global reg, pc, ir
-    arg1, = extract_args(ir, (0xf, 0))
+def op_writec(args: list[int]):
+    global pc
     # TODO: how to handle value outside of range? clamp?
-    print(chr(reg[arg1]))
+    print(chr(reg[args[0]]))
     pc += 1
 
-def op_seed():
-    global reg, pc, ir
-    arg1, = extract_args(ir, (0xf, 0))
-    random.seed((reg[arg1]))
+def op_seed(args: list[int]):
+    global pc
+    random.seed((reg[args[0]]))
     pc += 1
 
-def op_rand():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
-    lo = tc_b32_to_int(reg[arg1])
-    hi = tc_b32_to_int(reg[arg2])
-    reg[arg3] = tc_int_to_b32(random.randint(lo, hi))
+def op_rand(args: list[int]):
+    global reg, pc
+    lo = tc_b32_to_int(reg[args[0]])
+    hi = tc_b32_to_int(reg[args[1]])
+    reg[args[2]] = tc_int_to_b32(random.randint(lo, hi))
     pc += 1
 
-    if debug:
-        reg_curr_type[arg3] = builtins.int
-
-def op_time():
-    global reg, pc, ir
-    arg1, = extract_args(ir, (0xf, 0))
+def op_time(args: list[int]):
+    global reg, pc
     now = datetime.datetime.now()
-    reg[arg1] = (now.hour * 3600 + now.minute * 60 + now.second) * 1000 + now.microsecond // 1000
+    reg[args[0]] = (now.hour * 3600 + now.minute * 60 + now.second) * 1000 + now.microsecond // 1000
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
 
-
-def op_date():
-    global reg, pc, ir
-    arg1, = extract_args(ir, (0xf, 0))
+def op_date(args: list[int]):
+    global reg, pc
     today = datetime.date.today()
-    reg[arg1] = today.year << 13 | today.month << 9 | today.day
+    reg[args[0]] = today.year << 13 | today.month << 9 | today.day
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
-
-def op_nop():
+def op_nop(_):
     global pc
     pc += 1
 
 # Arithmetic instructions
 
-def op_neg():
-    global reg, pc, ir
-    arg1, arg2 = extract_args(ir, (0xf, 4), (0xf, 0))
-    reg[arg1] = tc_neg(reg[arg2])
+def op_neg(args: list[int]):
+    global reg, pc
+    reg[args[0]] = tc_neg(reg[args[1]])
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
-
-def op_add():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
-    reg[arg1] = tc_add(reg[arg2], reg[arg3])
+def op_add(args: list[int]):
+    global reg, pc
+    reg[args[0]] = tc_add(reg[args[1]], reg[args[2]])
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
-
-def op_sub():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
-    reg[arg1] = tc_sub(reg[arg2], reg[arg3])
+def op_sub(args: list[int]):
+    global reg, pc
+    reg[args[0]] = tc_sub(reg[args[1]], reg[args[2]])
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
-
-def op_mul():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
-    reg[arg1] = tc_mul(reg[arg2], reg[arg3])
+def op_mul(args: list[int]):
+    global reg, pc
+    reg[args[0]] = tc_mul(reg[args[1]], reg[args[2]])
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
-
-def op_div():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
-    reg[arg1] = tc_div(reg[arg2], reg[arg3])
+def op_div(args: list[int]):
+    global reg, pc
+    reg[args[0]] = tc_div(reg[args[1]], reg[args[2]])
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
-
-def op_mod():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
-    reg[arg1] = tc_mod(reg[arg2],  reg[arg3])
+def op_mod(args: list[int]):
+    global reg, pc
+    reg[args[0]] = tc_mod(reg[args[1]],  reg[args[2]])
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
-
-def op_fneg():
-    global reg, pc, ir
-    arg1, arg2, = extract_args(ir, (0xf, 4), (0xf, 0))
-    reg[arg1] = reg[arg2] ^ (1 << 31)
+def op_fneg(args: list[int]):
+    global reg, pc
+    reg[args[0]] = reg[args[1]] ^ (1 << 31)
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.float
-
-def op_fadd():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
-    reg[arg1] = fp_float_to_f32(fp_f32_to_float(reg[arg2]) + fp_f32_to_float(reg[arg3]))
+def op_fadd(args: list[int]):
+    global reg, pc
+    reg[args[0]] = fp_float_to_f32(fp_f32_to_float(reg[args[1]]) + fp_f32_to_float(reg[args[2]]))
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.float
-
-def op_fsub():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
-    reg[arg1] = fp_float_to_f32(fp_f32_to_float(reg[arg2]) - fp_f32_to_float(reg[arg3]))
+def op_fsub(args: list[int]):
+    global reg, pc
+    reg[args[0]] = fp_float_to_f32(fp_f32_to_float(reg[args[1]]) - fp_f32_to_float(reg[args[2]]))
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.float
-
-def op_fmul():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
-    reg[arg1] = fp_float_to_f32(fp_f32_to_float(reg[arg2]) * fp_f32_to_float(reg[arg3]))
+def op_fmul(args: list[int]):
+    global reg, pc
+    reg[args[0]] = fp_float_to_f32(fp_f32_to_float(reg[args[1]]) * fp_f32_to_float(reg[args[2]]))
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.float
-
-def op_fdiv():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
-    reg[arg1] = fp_float_to_f32(fp_f32_to_float(reg[arg2]) / fp_f32_to_float(reg[arg3]))
+def op_fdiv(args: list[int]):
+    global reg, pc
+    reg[args[0]] = fp_float_to_f32(fp_f32_to_float(reg[args[1]]) / fp_f32_to_float(reg[args[2]]))
     pc += 1
-
-    if debug:
-        reg_curr_type[arg1] = builtins.float
 
 # Bitwise instructions
 
-def op_and():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
-    reg[arg1] = reg[arg2] & reg[arg3]
+def op_and(args: list[int]):
+    global reg, pc
+    reg[args[0]] = reg[args[1]] & reg[args[2]]
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
-
-def op_or():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
-    reg[arg1] = reg[arg2] | reg[arg3]
+def op_or(args: list[int]):
+    global reg, pc
+    reg[args[0]] = reg[args[1]] | reg[args[2]]
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
-
-def op_xor():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
-    reg[arg1] = reg[arg2] ^ reg[arg3]
+def op_xor(args: list[int]):
+    global reg, pc
+    reg[args[0]] = reg[args[1]] ^ reg[args[2]]
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
-
-def op_not():
-    global reg, pc, ir
-    arg1, arg2= extract_args(ir, (0xf, 4), (0xf, 0))
-    reg[arg1] = ~reg[arg2]
+def op_not(args: list[int]):
+    global reg, pc
+    reg[args[0]] = ~reg[args[1]]
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
-
-def op_lshl():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
-    reg[arg1] = (reg[arg2] << reg[arg3]) & 0xffffffff
+def op_lshl(args: list[int]):
+    global reg, pc
+    reg[args[0]] = (reg[args[1]] << reg[args[2]]) & 0xffffffff
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
-
-def op_lshr():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
-    reg[arg1] = (reg[arg2] >> reg[arg3]) & 0xffffffff
+def op_lshr(args: list[int]):
+    global reg, pc
+    reg[args[0]] = (reg[args[1]] >> reg[args[2]]) & 0xffffffff
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
-
-def op_ashl():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
-    sign = reg[arg2] & (1 << 31)
-    temp = ((reg[arg2] ^ sign) << reg[arg3]) & 0xffffffff
-    reg[arg1] = 0 if temp == 0 else temp | sign
+def op_ashl(args: list[int]):
+    global reg, pc
+    sign = reg[args[1]] & (1 << 31)
+    temp = ((reg[args[1]] ^ sign) << reg[args[2]]) & 0xffffffff
+    reg[args[0]] = 0 if temp == 0 else temp | sign
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
-
-def op_ashr():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 8), (0xf, 4), (0xf, 0))
-    sign = reg[arg2] & (1 << 31)
-    temp = ((reg[arg2] ^ sign) >> reg[arg3]) & 0xffffffff
-    reg[arg1] = 0 if temp == 0 else temp | sign
+def op_ashr(args: list[int]):
+    global reg, pc
+    sign = reg[args[1]] & (1 << 31)
+    temp = ((reg[args[1]] ^ sign) >> reg[args[2]]) & 0xffffffff
+    reg[args[0]] = 0 if temp == 0 else temp | sign
     pc += 1
-
-    if debug:
-        reg_curr_type[arg1] = builtins.int
 
 # Jump Instructions
 
-def op_jumpn():
-    global pc, ir
-    arg1, = extract_args(ir, (0xffff, 0))
-    pc = arg1
+def op_jumpn(args: list[int]):
+    global pc
+    pc = args[0]
 
-def op_jumpr():
-    global reg, pc, ir
-    arg1, = extract_args(ir, (0xf, 0))
-    pc = reg[arg1]
+def op_jumpr(args: list[int]):
+    global pc
+    pc = reg[args[0]]
 
-def op_jeqzn():
-    global reg, pc, ir
-    arg1, arg2 = extract_args(ir, (0xf, 16), (0xffff, 0))
-    pc = arg2 if reg[arg1] == 0 else pc + 1
+def op_jeqzn(args: list[int]):
+    global pc
+    pc = args[1] if reg[args[0]] == 0 else pc + 1
 
-def op_jnezn():
-    global reg, pc, ir
-    arg1, arg2 = extract_args(ir, (0xf, 16), (0xffff, 0))
-    pc = arg2 if reg[arg1] != 0 else pc + 1
+def op_jnezn(args: list[int]):
+    global pc
+    pc = args[1] if reg[args[0]] != 0 else pc + 1
 
-def op_jgen():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 20), (0xf, 16), (0xffff, 0))
-    pc = arg3 if reg[arg1] >= reg[arg2] else pc + 1
+def op_jgen(args: list[int]):
+    global pc
+    pc = args[2] if reg[args[0]] >= reg[args[1]] else pc + 1
 
-def op_jlen():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 20), (0xf, 16), (0xffff, 0))
-    pc = arg3 if reg[arg1] <= reg[arg2] else pc + 1
+def op_jlen(args: list[int]):
+    global pc
+    pc = args[2] if reg[args[0]] <= reg[args[1]] else pc + 1
 
-def op_jeqn():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 20), (0xf, 16), (0xffff, 0))
-    pc = arg3 if reg[arg1] == reg[arg2] else pc + 1
+def op_jeqn(args: list[int]):
+    global pc
+    pc = args[2] if reg[args[0]] == reg[args[1]] else pc + 1
 
-def op_jnen():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 20), (0xf, 16), (0xffff, 0))
-    pc = arg3 if reg[arg1] != reg[arg2] else pc + 1
+def op_jnen(args: list[int]):
+    global pc
+    pc = args[2] if reg[args[0]] != reg[args[1]] else pc + 1
 
-def op_jgtn():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 20), (0xf, 16), (0xffff, 0))
-    pc = arg3 if reg[arg1] > reg[arg2] else pc + 1
+def op_jgtn(args: list[int]):
+    global pc
+    pc = args[2] if reg[args[0]] > reg[args[1]] else pc + 1
 
-def op_jltn():
-    global reg, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 20), (0xf, 16), (0xffff, 0))
-    pc = arg3 if reg[arg1] < reg[arg2] else pc + 1
+def op_jltn(args: list[int]):
+    global pc
+    pc = args[2] if reg[args[0]] < reg[args[1]] else pc + 1
 
-def op_calln():
-    global reg, pc, ir
-    arg1, arg2 = extract_args(ir, (0xf, 16), (0xffff, 0))
+def op_calln(args: list[int]):
+    global reg, pc
     # I think this is guaranteed to never be over integer limit
-    reg[arg1] = pc + 1
-    pc = arg2
+    reg[args[0]] = pc + 1
+    pc = args[1]
 
 # Register instructions
 
-def op_setn():
-    global reg, pc, ir
-    arg1, arg2 = extract_args(ir, (0xf, 16), (0xffff, 0))
-    reg[arg1] = tc_b16_to_b32(arg2)
+def op_setn(args: list[int]):
+    global reg, pc
+    reg[args[0]] = tc_b16_to_b32(args[1])
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
-
-def op_addn():
-    global reg, pc, ir
-    arg1, arg2 = extract_args(ir, (0xf, 16), (0xffff, 0))
-    reg[arg1] = tc_add(reg[arg1], tc_b16_to_b32(arg2))
+def op_addn(args: list[int]):
+    global reg, pc
+    reg[args[0]] = tc_add(reg[args[0]], tc_b16_to_b32(args[1]))
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
-
-def op_setf():
-    global reg, pc, ir
-    arg1, arg2 = extract_args(ir, (0xf, 16), (0xffff, 0))
-    reg[arg1] = fp_f16_to_f32(arg2)
+def op_setf(args: list[int]):
+    global reg, pc
+    reg[args[0]] = fp_f16_to_f32(args[1])
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.float
-
-def op_addf():
-    global reg, pc, ir
-    arg1, arg2 = extract_args(ir, (0xf, 16), (0xffff, 0))
-    reg[arg1] = fp_float_to_f32(fp_f32_to_float(reg[arg1]) + fp_f32_to_float(reg[arg2]))
+def op_addf(args: list[int]):
+    global reg, pc
+    reg[args[0]] = fp_float_to_f32(fp_f32_to_float(reg[args[0]]) + fp_f32_to_float(reg[args[1]]))
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.float
-
-def op_copy():
-    global reg, pc, ir
-    arg1, arg2 = extract_args(ir, (0xf, 4), (0xf, 0))
-    reg[arg1] = reg[arg2]
+def op_copy(args: list[int]):
+    global reg, pc
+    reg[args[0]] = reg[args[1]]
     pc += 1
-
-    if debug:
-        reg_curr_type[arg1] = reg_curr_type[arg2]
 
 # Memory instructions
 
-def op_loadr():
-    global reg, mem, pc, ir
-    arg1, arg2 = extract_args(ir, (0xf, 4), (0xf, 0))
-    reg[arg1] = mem[reg[arg2]]
+def op_loadr(args: list[int]):
+    global reg, pc
+    reg[args[0]] = mem[reg[args[1]]]
     pc += 1
 
-    if debug:
-        # TODO: how to track this?
-        reg_curr_type[arg1] = builtins.int
-
-def op_pushr():
-    global reg, mem, pc, ir
+def op_pushr(args: list[int]):
+    global reg, mem, pc
     # check if sp == gp
     if reg[reg_to_bin["sp"]] == reg[reg_to_bin["gp"]]:
         sys.exit(f"Error: stack overflow attempting to execute mem['{pc}']; halting the machine")
-    arg1, arg2 = extract_args(ir, (0xf, 4), (0xf, 0))
-    mem[reg[arg2]] = reg[arg1]
-    reg[arg2] = tc_sub(reg[arg2], 1)
+    mem[reg[args[1]]] = reg[args[0]]
+    reg[args[1]] = tc_sub(reg[args[1]], 1)
     pc += 1
 
-    if debug:
-        reg_curr_type[arg1] = builtins.int
-
-def op_popr():
-    global reg, mem, pc, ir
-    arg1, arg2 = extract_args(ir, (0xf, 4), (0xf, 0))
-    reg[arg2] = tc_add(reg[arg2], 1)
-    reg[arg1] = mem[reg[arg2]]
+def op_popr(args: list[int]):
+    global reg, pc
+    reg[args[1]] = tc_add(reg[args[1]], 1)
+    reg[args[0]] = mem[reg[args[1]]]
     pc += 1
 
-    if debug:
-        # TODO: how to track this?
-        reg_curr_type[arg1] = builtins.int
-
-def op_loadn():
-    global reg, mem, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 20), (0xf, 16), (0xffff, 0))
-    reg[arg1] = mem[tc_add(reg[arg2], tc_b16_to_b32(arg3))]
+def op_loadn(args: list[int]):
+    global reg, pc
+    reg[args[0]] = mem[tc_add(reg[args[1]], tc_b16_to_b32(args[2]))]
     pc += 1
 
-    if debug:
-        # TODO: how to track this?
-        reg_curr_type[arg1] = builtins.int
-
-def op_storen():
-    global reg, mem, pc, ir
-    arg1, arg2, arg3 = extract_args(ir, (0xf, 20), (0xf, 16), (0xffff, 0))
-    mem[tc_add(reg[arg2], tc_b16_to_b32(arg3))] = reg[arg1]
+def op_storen(args: list[int]):
+    global mem, pc
+    mem[tc_add(reg[args[1]], tc_b16_to_b32(args[2]))] = reg[args[0]]
     pc += 1
 
-def op_storer():
-    global reg, mem, pc, ir
-    arg1, arg2 = extract_args(ir, (0xf, 4), (0xf, 0))
-    mem[reg[arg2]] = reg[arg1]
+def op_storer(args: list[int]):
+    global mem, pc
+    mem[reg[args[1]]] = reg[args[0]]
     pc += 1
 
-def op_unimp():
-    global ir
+def op_unimp(_):
     sys.exit(f"Error: operation {bin_to_opcode[ir >> 24]} unimplemented")
 
 # TODO: where to put this? awkward
@@ -816,6 +628,7 @@ UINT32_MAX =  2 ** 32
 
 # TODO: combine into one function tc_int_to_bin(val: int, width: int) -> int
 # TODO: report under/overflow
+# TODO: completely redo tc over/underflow - look at existing implementations
 def tc_int_to_b16(val: int) -> int:
     while (val > INT16_MAX):
         val -= UINT16_MAX
@@ -937,11 +750,15 @@ def fp_f32_to_float(val: int) -> float:
     # TODO: test speed between struct and manual conversion
     return struct.unpack("!f", val.to_bytes(4))[0]
 
-def extract_args(code: int, *args: tuple[int, int]) -> list[int]:
-    ret: list[int] = [] 
-    for arg in args:
-        mask, bit = arg
-        ret.append((code & mask << bit) >> bit)
+def extract_args(ir: int, mask: str) -> list[int]:
+    ret: list[int] = []
+    for c in reversed(mask):
+        if c == "r":
+            ret.insert(0, ir & 0xf)
+            ir >>= 4
+        elif c == "n" or c == "f":
+            ret.insert(0, ir & 0xffff)
+            ir >>= 16
     return ret
 
 # Misc. helper functions
@@ -969,6 +786,12 @@ def valid_int(n: int) -> bool:
 # Return True if s is "r" followed by a number from the interval [0, 15], and False otherwise.
 def valid_reg(s: str) -> bool:
     return s in reg_to_bin.keys()
+
+def print_verbose_output():
+    for s in verbose_output:
+        print(s)
+    print()
+
 
 if __name__ == "__main__":
     main()
