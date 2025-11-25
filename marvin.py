@@ -199,8 +199,8 @@ def validate_marv(inFile: str) -> list[tuple[int, int, str, *tuple[str, ...]]]:
 
 # Assembles the instructions in tuples and returns a list containing the corresponding machine
 # codes. Prints the assembled instructions to stdout if verbose is True.
-def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]]) -> list[int]:
-    machine_code: list[int] = []
+def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]]) -> list[tuple[int, int, int, int]]:
+    machine_code: list[tuple[int, int, int, int]] = []
 
     for t in tuples:
         id, opcode, args = t[1], t[2], t[3:]
@@ -228,7 +228,8 @@ def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]]) -> list[int]:
                 curr_byte -= 2
             i -= 1
 
-        code = byte_list[0] << 24 | byte_list[1] << 16 | byte_list[2] << 8 | byte_list[3]
+        # code = byte_list[0] << 24 | byte_list[1] << 16 | byte_list[2] << 8 | byte_list[3]
+        code = (byte_list[0], byte_list[1], byte_list[2], byte_list[3])
         machine_code.append(code)
 
         if verbose or debug:
@@ -245,9 +246,15 @@ mem = [0] * 65536   # main memory
 pc = 0              # program counter
 ir = 0              # instruction register
 
+PC_STEP = 4
+
+def step_pc():
+    global pc
+    pc += PC_STEP
+
 # Simulate the assembled instructions in machineCodes.
-def simulate(machine_code: list[int]):
-    global reg, mem, ir
+def simulate(machine_code: list[tuple[int, int, int, int]]):
+    global reg, mem, ir, pc
 
     # Initialize the frame, stack, and global pointers
     reg[reg_to_bin["fp"]] = reg[reg_to_bin["sp"]] = 65535
@@ -255,12 +262,16 @@ def simulate(machine_code: list[int]):
 
     # Load the machine code into memory starting at location 0.
     for i, v in enumerate(machine_code):
-        mem[i] = v
+        for b in range(4):
+            mem[i * 4 + b] = v[b]
+        #     print(format(v[b], "08b"), end=' ')
+        # print()
+
 
     while True:
         # Fetch the next instruction to simulate.
         try:
-            ir = machine_code[pc]
+            ir = mem[pc] << 24 | mem[pc+1] << 16 | mem[pc+2] << 8 | mem[pc+3]
         except IndexError:
             sys.exit(f"Error: attempted to execute mem['{pc}']; halting the machine")
 
@@ -288,22 +299,40 @@ def simulate(machine_code: list[int]):
 def debug_exec():
     global reg, mem, pc, ir
     opcode = bin_to_opcode[ir >> 24]
-    print(f"pc: {pc} opcode: {opcode}")
+    # print(f"pc: {pc} opcode: {opcode}")
+    print(f"pc: {pc // 4}/{pc}")
+    print(f"{opcode :>10}:", end=" ")
+    print(format(ir, "032b"))
+    print()
     print_regs()
-    for i in range(65535, tc_b32_to_int(reg[reg_to_bin["sp"]]) - 1, -1):
+    print()
+    for i in range(65535, tc_b32_to_int(reg[reg_to_bin["sp"]]) - 1, -4):
+        sym = ""
         if i == reg[reg_to_bin["fp"]]:
-            print("*", end="")
+            sym += "*"
+        else:
+            sym += " "
         if i == reg[reg_to_bin["sp"]]:
-            print("^", end="")
-        print(mem[i])
-    _ = input()
+            sym += ">"
+        else:
+            sym += " "
+        # print(f"{sym + f" {i :>5}: " + format(mem[i], "08b") :>11}")
+        print(f"{sym + " " + f"{hex(i) :>5}"}: {" ".join(format(byte, "08b") for byte in mem[i : i - 4 : -1])}")
+    print()
+    cmd = input("> ")
+    print()
+
 
 def print_regs():
     # TODO: figure out floating point spacing
-    print(f"r0:  {format_reg(reg[0]):  10d} r1:  {format_reg(reg[1]):  10d} r2:  {format_reg(reg[2]):  10d} r3:  {format_reg(reg[3]):  10d}")
-    print(f"r4:  {format_reg(reg[4]):  10d} r5:  {format_reg(reg[5]):  10d} r6:  {format_reg(reg[6]):  10d} r7:  {format_reg(reg[7]):  10d}")
-    print(f"r8:  {format_reg(reg[8]):  10d} r9:  {format_reg(reg[9]):  10d} r10: {format_reg(reg[10]): 10d} r11: {format_reg(reg[11]): 10d}")
-    print(f"r12: {format_reg(reg[12]): 10d} r13: {format_reg(reg[13]): 10d} r14: {format_reg(reg[14]): 10d} r15: {format_reg(reg[15]): 10d}")
+    # print(f"r0:  {format_reg(0)  :>10} r1:  {format_reg(1)  :>10} r2:  {format_reg(2)  :>10} r3:  {format_reg(3)  :>10}")
+    # print(f"r4:  {format_reg(4)  :>10} r5:  {format_reg(5)  :>10} r6:  {format_reg(6)  :>10} r7:  {format_reg(7)  :>10}")
+    # print(f"r8:  {format_reg(8)  :>10} r9:  {format_reg(9)  :>10} r10: {format_reg(10) :>10} r11: {format_reg(11) :>10}")
+    # print(f"r12: {format_reg(12) :>10} r13: {format_reg(13) :>10} r14: {format_reg(14) :>10} r15: {format_reg(15) :>10}")
+    print(f"r0:  {format_reg(0)  :>10} r1:  {format_reg(1)  :>10} r2:  {format_reg(2)  :>10} r3:  {format_reg(3)  :>10}")
+    print(f"r4:  {format_reg(4)  :>10} r5:  {format_reg(5)  :>10} r6:  {format_reg(6)  :>10} r7:  {format_reg(7)  :>10}")
+    print(f"r8:  {format_reg(8)  :>10} r9:  {format_reg(9)  :>10} r10: {format_reg(10) :>10} ra:  {format_reg(11) :>10}")
+    print(f"rv:  {format_reg(12) :>10} fp:  {format_reg(13) :>10} sp:  {format_reg(14) :>10} gp:  {format_reg(15) :>10}")
 
 def format_reg(regbin: int) -> str:
     match reg_curr_type[regbin]:
@@ -314,7 +343,7 @@ def format_reg(regbin: int) -> str:
         case builtins.str:
             return f"{chr(reg[regbin])}"
         case _:
-            return ""
+            return f"{format(regbin, "032b")}"
 
 # System Instructions
 
@@ -324,33 +353,33 @@ def op_halt(_):
     sys.exit()
 
 def op_readi(args: list[int]):
-    global reg, pc
+    global reg
     while True:
         try:
-            x = int(input())
+            x = int(input("Enter an integer: "))
             if (valid_int(x)):
                 break
             raise ValueError
         except ValueError:
             print("Illegal input: input must be a number must be in [-32768, 32767]")
     reg[args[0]] = tc_int_to_b32(x)
-    pc += 1
+    step_pc()
 
 
 def op_readf(args: list[int]):
-    global reg, pc
+    global reg
     while True:
         try:
-            x = float(input())
+            x = float(input("Enter a float: "))
             break
         except ValueError:
             # TODO: better error message
             print("Illegal input: input must be a number")
     reg[args[0]] = fp_float_to_f32(x)
-    pc += 1
+    step_pc()
 
 def op_readc(args: list[int]):
-    global reg, pc
+    global reg
     while True:
         try:
             # TODO: OS compliant getch()
@@ -360,267 +389,297 @@ def op_readc(args: list[int]):
         except Exception:
             pass
     reg[args[0]] = ord(x)
-    pc += 1
+    step_pc()
 
 def op_writei(args: list[int]):
-    global pc
     print(tc_b32_to_int(reg[args[0]]))
-    pc += 1
+    step_pc()
 
 def op_writef(args: list[int]):
-    global pc
     print(fp_f32_to_float(reg[args[0]]))
-    pc += 1
+    step_pc()
 
 def op_writec(args: list[int]):
-    global pc
     # TODO: how to handle value outside of range? clamp?
     print(chr(reg[args[0]]))
-    pc += 1
+    step_pc()
 
 def op_seed(args: list[int]):
-    global pc
     random.seed((reg[args[0]]))
-    pc += 1
+    step_pc()
 
 def op_rand(args: list[int]):
-    global reg, pc
+    global reg
     lo = tc_b32_to_int(reg[args[0]])
     hi = tc_b32_to_int(reg[args[1]])
     reg[args[2]] = tc_int_to_b32(random.randint(lo, hi))
-    pc += 1
+    step_pc()
 
 def op_time(args: list[int]):
-    global reg, pc
+    global reg
     now = datetime.datetime.now()
     reg[args[0]] = (now.hour * 3600 + now.minute * 60 + now.second) * 1000 + now.microsecond // 1000
-    pc += 1
+    step_pc()
 
 
 def op_date(args: list[int]):
-    global reg, pc
+    global reg
     today = datetime.date.today()
     reg[args[0]] = today.year << 13 | today.month << 9 | today.day
-    pc += 1
+    step_pc()
 
 def op_nop(_):
-    global pc
-    pc += 1
+    step_pc()
 
 # Arithmetic instructions
 
 def op_neg(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = tc_neg(reg[args[1]])
-    pc += 1
+    step_pc()
 
 def op_add(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = tc_add(reg[args[1]], reg[args[2]])
-    pc += 1
+    step_pc()
 
 def op_sub(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = tc_sub(reg[args[1]], reg[args[2]])
-    pc += 1
+    step_pc()
 
 def op_mul(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = tc_mul(reg[args[1]], reg[args[2]])
-    pc += 1
+    step_pc()
 
 def op_div(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = tc_div(reg[args[1]], reg[args[2]])
-    pc += 1
+    step_pc()
 
 def op_mod(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = tc_mod(reg[args[1]],  reg[args[2]])
-    pc += 1
+    step_pc()
 
 def op_fneg(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = reg[args[1]] ^ (1 << 31)
-    pc += 1
+    step_pc()
 
 def op_fadd(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = fp_float_to_f32(fp_f32_to_float(reg[args[1]]) + fp_f32_to_float(reg[args[2]]))
-    pc += 1
+    step_pc()
 
 def op_fsub(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = fp_float_to_f32(fp_f32_to_float(reg[args[1]]) - fp_f32_to_float(reg[args[2]]))
-    pc += 1
+    step_pc()
 
 def op_fmul(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = fp_float_to_f32(fp_f32_to_float(reg[args[1]]) * fp_f32_to_float(reg[args[2]]))
-    pc += 1
+    step_pc()
 
 def op_fdiv(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = fp_float_to_f32(fp_f32_to_float(reg[args[1]]) / fp_f32_to_float(reg[args[2]]))
-    pc += 1
+    step_pc()
 
 # Bitwise instructions
 
 def op_and(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = reg[args[1]] & reg[args[2]]
-    pc += 1
+    step_pc()
 
 def op_or(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = reg[args[1]] | reg[args[2]]
-    pc += 1
+    step_pc()
 
 def op_xor(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = reg[args[1]] ^ reg[args[2]]
-    pc += 1
+    step_pc()
 
 def op_not(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = ~reg[args[1]]
-    pc += 1
+    step_pc()
 
 def op_lshl(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = (reg[args[1]] << reg[args[2]]) & 0xffffffff
-    pc += 1
+    step_pc()
 
 def op_lshr(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = (reg[args[1]] >> reg[args[2]]) & 0xffffffff
-    pc += 1
+    step_pc()
 
 def op_ashl(args: list[int]):
-    global reg, pc
+    global reg
     sign = reg[args[1]] & (1 << 31)
     temp = ((reg[args[1]] ^ sign) << reg[args[2]]) & 0xffffffff
     reg[args[0]] = 0 if temp == 0 else temp | sign
-    pc += 1
+    step_pc()
 
 def op_ashr(args: list[int]):
-    global reg, pc
+    global reg
     sign = reg[args[1]] & (1 << 31)
     temp = ((reg[args[1]] ^ sign) >> reg[args[2]]) & 0xffffffff
     reg[args[0]] = 0 if temp == 0 else temp | sign
-    pc += 1
+    step_pc()
 
 # Jump Instructions
 
 def op_jumpn(args: list[int]):
     global pc
-    pc = args[0]
+    pc = args[0] * PC_STEP
+    # print(f"jump to: {pc // 4}")
 
 def op_jumpr(args: list[int]):
     global pc
     pc = reg[args[0]]
+    # print(f"jump to: {pc}")
 
 def op_jeqzn(args: list[int]):
     global pc
-    pc = args[1] if reg[args[0]] == 0 else pc + 1
+    pc = args[1] * PC_STEP if reg[args[0]] == 0 else pc + PC_STEP
+    # print(f"jump to: {pc // 4}")
 
 def op_jnezn(args: list[int]):
     global pc
-    pc = args[1] if reg[args[0]] != 0 else pc + 1
+    pc = args[1] * PC_STEP if reg[args[0]] != 0 else pc + PC_STEP
+    # print(f"jump to: {pc // 4}")
 
 def op_jgen(args: list[int]):
     global pc
-    pc = args[2] if reg[args[0]] >= reg[args[1]] else pc + 1
+    pc = args[2] * PC_STEP if reg[args[0]] >= reg[args[1]] else pc + PC_STEP
+    # print(f"jump to: {pc // 4}")
 
 def op_jlen(args: list[int]):
     global pc
-    pc = args[2] if reg[args[0]] <= reg[args[1]] else pc + 1
+    pc = args[2] * PC_STEP if reg[args[0]] <= reg[args[1]] else pc + PC_STEP
+    # print(f"jump to: {pc // 4}")
 
 def op_jeqn(args: list[int]):
     global pc
-    pc = args[2] if reg[args[0]] == reg[args[1]] else pc + 1
+    pc = args[2] * PC_STEP if reg[args[0]] == reg[args[1]] else pc + PC_STEP
+    # print(f"jump to: {pc // 4}")
 
 def op_jnen(args: list[int]):
     global pc
-    pc = args[2] if reg[args[0]] != reg[args[1]] else pc + 1
+    pc = args[2] * PC_STEP if reg[args[0]] != reg[args[1]] else pc + PC_STEP
+    # print(f"jump to: {pc // 4}")
 
 def op_jgtn(args: list[int]):
     global pc
-    pc = args[2] if reg[args[0]] > reg[args[1]] else pc + 1
+    pc = args[2] * PC_STEP if reg[args[0]] > reg[args[1]] else pc + PC_STEP
+    # print(f"jump to: {pc // 4}")
 
 def op_jltn(args: list[int]):
     global pc
-    pc = args[2] if reg[args[0]] < reg[args[1]] else pc + 1
+    pc = args[2] * PC_STEP if reg[args[0]] < reg[args[1]] else pc + PC_STEP
+    # print(f"jump to: {pc // 4}")
 
 def op_calln(args: list[int]):
     global reg, pc
     # I think this is guaranteed to never be over integer limit
-    reg[args[0]] = pc + 1
-    pc = args[1]
+    reg[args[0]] = pc + PC_STEP
+    pc = args[1] * PC_STEP
+    # print(f"jump to: {pc // 4}")
 
 # Register instructions
 
 def op_setn(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = tc_b16_to_b32(args[1])
-    pc += 1
+    step_pc()
 
 def op_addn(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = tc_add(reg[args[0]], tc_b16_to_b32(args[1]))
-    pc += 1
+    step_pc()
 
 def op_setf(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = fp_f16_to_f32(args[1])
-    pc += 1
+    step_pc()
 
 def op_addf(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = fp_float_to_f32(fp_f32_to_float(reg[args[0]]) + fp_f32_to_float(reg[args[1]]))
-    pc += 1
+    step_pc()
 
 def op_copy(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = reg[args[1]]
-    pc += 1
+    step_pc()
 
 # Memory instructions
 
 def op_loadr(args: list[int]):
-    global reg, pc
+    global reg
     reg[args[0]] = mem[reg[args[1]]]
-    pc += 1
+    step_pc()
 
 def op_pushr(args: list[int]):
-    global reg, mem, pc
+    global reg, mem
     # check if sp == gp
     if reg[reg_to_bin["sp"]] == reg[reg_to_bin["gp"]]:
         sys.exit(f"Error: stack overflow attempting to execute mem['{pc}']; halting the machine")
-    mem[reg[args[1]]] = reg[args[0]]
-    reg[args[1]] = tc_sub(reg[args[1]], 1)
-    pc += 1
+    # mem[sp : sp - 4] = reg[args[0]]
+    # print(f">to push  : {format(reg[args[0]], "032b")}")
+    mem[reg[args[1]] - 0] = (reg[args[0]] & (0xff << 0)) << 0
+    mem[reg[args[1]] - 1] = (reg[args[0]] & (0xff << 8)) >> 8
+    mem[reg[args[1]] - 2] = (reg[args[0]] & (0xff << 16)) >> 16
+    mem[reg[args[1]] - 3] = (reg[args[0]] & (0xff << 24)) >> 24
+    # sp -= pc_step
+    # pushed = mem[reg[args[1]] - 0] << 0 | mem[reg[args[1]] - 1] << 8 | mem[reg[args[1]] - 2] << 16 | mem[reg[args[1]] - 3] << 24
+    # print(f">pushed   : {format(pushed, "032b")}")
+    reg[args[1]] = tc_sub(reg[args[1]], PC_STEP)
+    step_pc()
 
 def op_popr(args: list[int]):
-    global reg, pc
-    reg[args[1]] = tc_add(reg[args[1]], 1)
-    reg[args[0]] = mem[reg[args[1]]]
-    pc += 1
+    global reg
+    # sp += pc_step
+    reg[args[1]] = tc_add(reg[args[1]], PC_STEP)
+    # word = mem[sp : sp + 4] (little-endian)
+    # word = mem[reg[args[1]] - PC_STEP : reg[args[1]]]
+    word = mem[reg[args[1]] : reg[args[1]] - PC_STEP : -1]
+    reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
+    # print(f">popped   : {format(reg[args[0]], "032b")}")
+    step_pc()
 
 def op_loadn(args: list[int]):
-    global reg, pc
-    reg[args[0]] = mem[tc_add(reg[args[1]], tc_b16_to_b32(args[2]))]
-    pc += 1
+    global reg
+    addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))
+    # print(f"loading   : {reg[args[1]]} + {tc_b16_to_b32(args[2])}")
+    word = mem[addr : addr - PC_STEP: -1]
+    reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
+    # print(f">loaded   : {format(reg[args[0]], "032b")}")
+    step_pc()
 
 def op_storen(args: list[int]):
-    global mem, pc
-    mem[tc_add(reg[args[1]], tc_b16_to_b32(args[2]))] = reg[args[0]]
-    pc += 1
+    global mem
+    addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))
+    mem[addr - 0] = reg[args[0]] << 0
+    mem[addr - 1] = reg[args[0]] << 8
+    mem[addr - 2] = reg[args[0]] << 16
+    mem[addr - 3] = reg[args[0]] << 24
+    step_pc()
 
 def op_storer(args: list[int]):
-    global mem, pc
-    mem[reg[args[1]]] = reg[args[0]]
-    pc += 1
+    global mem
+    mem[reg[args[1]] - 0] = reg[args[0]] << 0
+    mem[reg[args[1]] - 1] = reg[args[0]] << 8
+    mem[reg[args[1]] - 2] = reg[args[0]] << 16
+    mem[reg[args[1]] - 3] = reg[args[0]] << 24
+    step_pc()
 
 def op_unimp(_):
     sys.exit(f"Error: operation {bin_to_opcode[ir >> 24]} unimplemented")
@@ -814,4 +873,7 @@ def print_opcode_cost():
             print(f"{k: <6}: {v * opcode_to_cost[k]}")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit()
