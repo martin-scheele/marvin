@@ -3,6 +3,7 @@ import argparse
 import builtins
 import datetime
 import os
+from platform import machine
 import random
 import struct
 import sys
@@ -246,11 +247,11 @@ mem = [0] * 65536   # main memory
 pc = 0              # program counter
 ir = 0              # instruction register
 
-PC_STEP = 4
+WORD_SIZE = 4
 
 def step_pc():
     global pc
-    pc += PC_STEP
+    pc += WORD_SIZE
 
 # Simulate the assembled instructions in machineCodes.
 def simulate(machine_code: list[tuple[int, int, int, int]]):
@@ -258,22 +259,19 @@ def simulate(machine_code: list[tuple[int, int, int, int]]):
 
     # Initialize the frame, stack, and global pointers
     reg[reg_to_bin["fp"]] = reg[reg_to_bin["sp"]] = 65535
-    reg[reg_to_bin["gp"]] = 8192
+    reg[reg_to_bin["gp"]] = 8191
 
     # Load the machine code into memory starting at location 0.
     for i, v in enumerate(machine_code):
         for b in range(4):
             mem[i * 4 + b] = v[b]
-        #     print(format(v[b], "08b"), end=' ')
-        # print()
-
 
     while True:
         # Fetch the next instruction to simulate.
         try:
             ir = mem[pc] << 24 | mem[pc+1] << 16 | mem[pc+2] << 8 | mem[pc+3]
         except IndexError:
-            sys.exit(f"Error: attempted to execute mem['{pc}']; halting the machine")
+            sys.exit(f"Error: attempted to execute mem['{pc // WORD_SIZE}']; halting the machine")
 
         # Conditionally execute the debugger.
         if debug: 
@@ -317,9 +315,9 @@ def debug_exec():
         else:
             sym += " "
         # print(f"{sym + f" {i :>5}: " + format(mem[i], "08b") :>11}")
-        print(f"{sym + " " + f"{hex(i) :>5}"}: {" ".join(format(byte, "08b") for byte in mem[i : i - 4 : -1])}")
+        print(f"{sym + " " + f"{hex(i) :>5}"}: {" ".join(format(byte, "08b") for byte in mem[i - 3 : i + 1])}")
     print()
-    cmd = input("> ")
+    _ = input("> ")
     print()
 
 
@@ -356,7 +354,7 @@ def op_readi(args: list[int]):
     global reg
     while True:
         try:
-            x = int(input("Enter an integer: "))
+            x = int(input())
             if (valid_int(x)):
                 break
             raise ValueError
@@ -370,7 +368,7 @@ def op_readf(args: list[int]):
     global reg
     while True:
         try:
-            x = float(input("Enter a float: "))
+            x = float(input())
             break
         except ValueError:
             # TODO: better error message
@@ -538,60 +536,49 @@ def op_ashr(args: list[int]):
 
 def op_jumpn(args: list[int]):
     global pc
-    pc = args[0] * PC_STEP
-    # print(f"jump to: {pc // 4}")
+    pc = args[0] * WORD_SIZE
 
 def op_jumpr(args: list[int]):
     global pc
     pc = reg[args[0]]
-    # print(f"jump to: {pc}")
 
 def op_jeqzn(args: list[int]):
     global pc
-    pc = args[1] * PC_STEP if reg[args[0]] == 0 else pc + PC_STEP
-    # print(f"jump to: {pc // 4}")
+    pc = args[1] * WORD_SIZE if reg[args[0]] == 0 else pc + WORD_SIZE
 
 def op_jnezn(args: list[int]):
     global pc
-    pc = args[1] * PC_STEP if reg[args[0]] != 0 else pc + PC_STEP
-    # print(f"jump to: {pc // 4}")
+    pc = args[1] * WORD_SIZE if reg[args[0]] != 0 else pc + WORD_SIZE
 
 def op_jgen(args: list[int]):
     global pc
-    pc = args[2] * PC_STEP if reg[args[0]] >= reg[args[1]] else pc + PC_STEP
-    # print(f"jump to: {pc // 4}")
+    pc = args[2] * WORD_SIZE if reg[args[0]] >= reg[args[1]] else pc + WORD_SIZE
 
 def op_jlen(args: list[int]):
     global pc
-    pc = args[2] * PC_STEP if reg[args[0]] <= reg[args[1]] else pc + PC_STEP
-    # print(f"jump to: {pc // 4}")
+    pc = args[2] * WORD_SIZE if reg[args[0]] <= reg[args[1]] else pc + WORD_SIZE
 
 def op_jeqn(args: list[int]):
     global pc
-    pc = args[2] * PC_STEP if reg[args[0]] == reg[args[1]] else pc + PC_STEP
-    # print(f"jump to: {pc // 4}")
+    pc = args[2] * WORD_SIZE if reg[args[0]] == reg[args[1]] else pc + WORD_SIZE
 
 def op_jnen(args: list[int]):
     global pc
-    pc = args[2] * PC_STEP if reg[args[0]] != reg[args[1]] else pc + PC_STEP
-    # print(f"jump to: {pc // 4}")
+    pc = args[2] * WORD_SIZE if reg[args[0]] != reg[args[1]] else pc + WORD_SIZE
 
 def op_jgtn(args: list[int]):
     global pc
-    pc = args[2] * PC_STEP if reg[args[0]] > reg[args[1]] else pc + PC_STEP
-    # print(f"jump to: {pc // 4}")
+    pc = args[2] * WORD_SIZE if reg[args[0]] > reg[args[1]] else pc + WORD_SIZE
 
 def op_jltn(args: list[int]):
     global pc
-    pc = args[2] * PC_STEP if reg[args[0]] < reg[args[1]] else pc + PC_STEP
-    # print(f"jump to: {pc // 4}")
+    pc = args[2] * WORD_SIZE if reg[args[0]] < reg[args[1]] else pc + WORD_SIZE
 
 def op_calln(args: list[int]):
     global reg, pc
     # I think this is guaranteed to never be over integer limit
-    reg[args[0]] = pc + PC_STEP
-    pc = args[1] * PC_STEP
-    # print(f"jump to: {pc // 4}")
+    reg[args[0]] = pc + WORD_SIZE
+    pc = args[1] * WORD_SIZE
 
 # Register instructions
 
@@ -622,46 +609,29 @@ def op_copy(args: list[int]):
 
 # Memory instructions
 
-def op_loadr(args: list[int]):
-    global reg
-    reg[args[0]] = mem[reg[args[1]]]
-    step_pc()
-
 def op_pushr(args: list[int]):
     global reg, mem
-    # check if sp == gp
     if reg[reg_to_bin["sp"]] == reg[reg_to_bin["gp"]]:
-        sys.exit(f"Error: stack overflow attempting to execute mem['{pc}']; halting the machine")
-    # mem[sp : sp - 4] = reg[args[0]]
-    # print(f">to push  : {format(reg[args[0]], "032b")}")
+        sys.exit(f"Error: stack overflow attempting to execute mem[{pc // WORD_SIZE}]; halting the machine")
     mem[reg[args[1]] - 0] = (reg[args[0]] & (0xff << 0)) << 0
     mem[reg[args[1]] - 1] = (reg[args[0]] & (0xff << 8)) >> 8
     mem[reg[args[1]] - 2] = (reg[args[0]] & (0xff << 16)) >> 16
     mem[reg[args[1]] - 3] = (reg[args[0]] & (0xff << 24)) >> 24
-    # sp -= pc_step
-    # pushed = mem[reg[args[1]] - 0] << 0 | mem[reg[args[1]] - 1] << 8 | mem[reg[args[1]] - 2] << 16 | mem[reg[args[1]] - 3] << 24
-    # print(f">pushed   : {format(pushed, "032b")}")
-    reg[args[1]] = tc_sub(reg[args[1]], PC_STEP)
+    reg[args[1]] = tc_sub(reg[args[1]], WORD_SIZE)
     step_pc()
 
 def op_popr(args: list[int]):
     global reg
-    # sp += pc_step
-    reg[args[1]] = tc_add(reg[args[1]], PC_STEP)
-    # word = mem[sp : sp + 4] (little-endian)
-    # word = mem[reg[args[1]] - PC_STEP : reg[args[1]]]
-    word = mem[reg[args[1]] : reg[args[1]] - PC_STEP : -1]
+    reg[args[1]] = tc_add(reg[args[1]], WORD_SIZE)
+    word = mem[reg[args[1]] : reg[args[1]] - WORD_SIZE : -1]
     reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
-    # print(f">popped   : {format(reg[args[0]], "032b")}")
     step_pc()
 
 def op_loadn(args: list[int]):
     global reg
     addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))
-    # print(f"loading   : {reg[args[1]]} + {tc_b16_to_b32(args[2])}")
-    word = mem[addr : addr - PC_STEP: -1]
+    word = mem[addr : addr - WORD_SIZE : -1]
     reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
-    # print(f">loaded   : {format(reg[args[0]], "032b")}")
     step_pc()
 
 def op_storen(args: list[int]):
@@ -671,6 +641,12 @@ def op_storen(args: list[int]):
     mem[addr - 1] = reg[args[0]] << 8
     mem[addr - 2] = reg[args[0]] << 16
     mem[addr - 3] = reg[args[0]] << 24
+    step_pc()
+
+def op_loadr(args: list[int]):
+    global reg
+    word = mem[reg[args[1]] : reg[args[1]] - WORD_SIZE : -1]
+    reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
     step_pc()
 
 def op_storer(args: list[int]):
