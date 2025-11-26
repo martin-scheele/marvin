@@ -3,7 +3,6 @@ import argparse
 import builtins
 import datetime
 import os
-from platform import machine
 import random
 import struct
 import sys
@@ -229,7 +228,6 @@ def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]]) -> list[tuple
                 curr_byte -= 2
             i -= 1
 
-        # code = byte_list[0] << 24 | byte_list[1] << 16 | byte_list[2] << 8 | byte_list[3]
         code = (byte_list[0], byte_list[1], byte_list[2], byte_list[3])
         machine_code.append(code)
 
@@ -271,7 +269,7 @@ def simulate(machine_code: list[tuple[int, int, int, int]]):
         try:
             ir = mem[pc] << 24 | mem[pc+1] << 16 | mem[pc+2] << 8 | mem[pc+3]
         except IndexError:
-            sys.exit(f"Error: attempted to execute mem['{pc // WORD_SIZE}']; halting the machine")
+            sys.exit(f"Error: attempted to execute instruction {pc // WORD_SIZE}; halting the machine")
 
         # Conditionally execute the debugger.
         if debug: 
@@ -294,43 +292,75 @@ def simulate(machine_code: list[tuple[int, int, int, int]]):
             opcode_to_calls[opcode] += 1
             # TODO: actually delay and visualize
 
+# Debug globals.
+breakpoints: set[int] = set()
+continue_debug: bool = False
+
 def debug_exec():
     global reg, mem, pc, ir
-    opcode = bin_to_opcode[ir >> 24]
-    # print(f"pc: {pc} opcode: {opcode}")
-    print(f"pc: {pc // 4}/{pc}")
-    print(f"{opcode :>10}:", end=" ")
-    print(format(ir, "032b"))
-    print()
+    global breakpoints, continue_debug
+
+    # Check for breakpoints.
+    if pc // 4 in breakpoints:
+        pass
+    elif continue_debug:
+        return
+
+    # Print current instruction; register and stack contents
+    print(verbose_output[pc // 4], end="\n\n")
     print_regs()
-    print()
-    for i in range(65535, tc_b32_to_int(reg[reg_to_bin["sp"]]) - 1, -4):
-        sym = ""
-        if i == reg[reg_to_bin["fp"]]:
-            sym += "*"
+    print_stack()
+
+    # Get debug input.
+    while cmd := input("> "):
+        if not (tokens := cmd.split()):
+            break
+        cmd = tokens[0]
+        args = [] if len(tokens) == 1 else tokens[1:]
+        if cmd == "c" or cmd == "continue":
+            continue_debug = True
+            break
+        elif cmd == "s" or cmd == "step":
+            continue_debug = False
+            break
+        elif cmd == "b" or cmd == "break":
+            if args:
+                try:
+                    breakpoints.add(int(args[0]))
+                except ValueError:
+                    print(f"Invalid breakpoint: {args[0]}")
+            else:
+                breakpoints.add(pc // 4)
+        elif cmd == "d" or cmd == "disable" or cmd == "delete":
+            if args:
+                try:
+                    breakpoints.remove(int(args[0]))
+                except ValueError:
+                    print(f"Invalid breakpoint: {args[0]}")
+            else:
+                breakpoints = set()
+        elif cmd == "l" or cmd == "list":
+            print(f"breakpoints: {", ".join([str(bp) for bp in breakpoints])}")
+        elif cmd == "p" or cmd == "print":
+            # TODO: how to handle the possibilities
+            pass
         else:
-            sym += " "
-        if i == reg[reg_to_bin["sp"]]:
-            sym += ">"
-        else:
-            sym += " "
-        # print(f"{sym + f" {i :>5}: " + format(mem[i], "08b") :>11}")
-        print(f"{sym + " " + f"{hex(i) :>5}"}: {" ".join(format(byte, "08b") for byte in mem[i - 3 : i + 1])}")
-    print()
-    _ = input("> ")
+            print(f"Invalid command: {cmd}")
     print()
 
 
 def print_regs():
-    # TODO: figure out floating point spacing
-    # print(f"r0:  {format_reg(0)  :>10} r1:  {format_reg(1)  :>10} r2:  {format_reg(2)  :>10} r3:  {format_reg(3)  :>10}")
-    # print(f"r4:  {format_reg(4)  :>10} r5:  {format_reg(5)  :>10} r6:  {format_reg(6)  :>10} r7:  {format_reg(7)  :>10}")
-    # print(f"r8:  {format_reg(8)  :>10} r9:  {format_reg(9)  :>10} r10: {format_reg(10) :>10} r11: {format_reg(11) :>10}")
-    # print(f"r12: {format_reg(12) :>10} r13: {format_reg(13) :>10} r14: {format_reg(14) :>10} r15: {format_reg(15) :>10}")
-    print(f"r0:  {format_reg(0)  :>10} r1:  {format_reg(1)  :>10} r2:  {format_reg(2)  :>10} r3:  {format_reg(3)  :>10}")
-    print(f"r4:  {format_reg(4)  :>10} r5:  {format_reg(5)  :>10} r6:  {format_reg(6)  :>10} r7:  {format_reg(7)  :>10}")
-    print(f"r8:  {format_reg(8)  :>10} r9:  {format_reg(9)  :>10} r10: {format_reg(10) :>10} ra:  {format_reg(11) :>10}")
-    print(f"rv:  {format_reg(12) :>10} fp:  {format_reg(13) :>10} sp:  {format_reg(14) :>10} gp:  {format_reg(15) :>10}")
+    print(f"r0:  [{format_reg(0)  :>10}] r1:  [{format_reg(1)  :>10}] r2:  [{format_reg(2)  :>10}] r3:  [{format_reg(3)  :>10}]")
+    print(f"r4:  [{format_reg(4)  :>10}] r5:  [{format_reg(5)  :>10}] r6:  [{format_reg(6)  :>10}] r7:  [{format_reg(7)  :>10}]")
+    print(f"r8:  [{format_reg(8)  :>10}] r9:  [{format_reg(9)  :>10}] r10: [{format_reg(10) :>10}] ra:  [{format_reg(11) :>10}]")
+    print(f"rv:  [{format_reg(12) :>10}] fp:  [{format_reg(13) :>10}] sp:  [{format_reg(14) :>10}] gp:  [{format_reg(15) :>10}]")
+    print()
+
+def print_stack():
+    for i in range(65535, tc_b32_to_int(reg[reg_to_bin["sp"]]) - 1, -4):
+        sym = ["*" if i == reg[reg_to_bin["fp"]] else " ", ">" if i == reg[reg_to_bin["sp"]] else " "]
+        print(f"{"".join(sym)} {i:04x}: {" ".join(format(byte, "08b") for byte in mem[i - 3 : i + 1])}")
+    print()
 
 def format_reg(regbin: int) -> str:
     match reg_curr_type[regbin]:
@@ -611,9 +641,9 @@ def op_copy(args: list[int]):
 
 def op_pushr(args: list[int]):
     global reg, mem
-    if reg[reg_to_bin["sp"]] == reg[reg_to_bin["gp"]]:
-        sys.exit(f"Error: stack overflow attempting to execute mem[{pc // WORD_SIZE}]; halting the machine")
-    mem[reg[args[1]] - 0] = (reg[args[0]] & (0xff << 0)) << 0
+    if reg[reg_to_bin["sp"]] <= reg[reg_to_bin["gp"]]:
+        sys.exit(f"Error: stack overflow attempting to execute instruction {pc // WORD_SIZE}; halting the machine")
+    mem[reg[args[1]] - 0] = (reg[args[0]] & (0xff << 0)) >> 0
     mem[reg[args[1]] - 1] = (reg[args[0]] & (0xff << 8)) >> 8
     mem[reg[args[1]] - 2] = (reg[args[0]] & (0xff << 16)) >> 16
     mem[reg[args[1]] - 3] = (reg[args[0]] & (0xff << 24)) >> 24
