@@ -99,6 +99,8 @@ verbose_output: list[str] = []
 debug = False
 count_calls = False
 
+# determine getch function
+
 def main():
     # Process command-line inputs and exit if they are not as expected.
     parser = argparse.ArgumentParser(description=description)
@@ -116,6 +118,7 @@ def main():
 
     if not inFile.endswith(".marv") or not os.path.exists(inFile):
         sys.exit(f"Error: invalid file '{inFile}'")
+
 
     # Validate .marv and extract tokens.
     tuples = validate_marv(inFile)
@@ -308,8 +311,8 @@ def debug_exec():
 
     # Print current instruction; register and stack contents
     print(verbose_output[pc // 4], end="\n\n")
-    print_regs()
-    print_stack()
+    # print_regs()
+    # print_stack()
 
     # Get debug input.
     while cmd := input("> "):
@@ -324,26 +327,74 @@ def debug_exec():
             continue_debug = False
             break
         elif cmd == "b" or cmd == "break":
-            if args:
-                try:
-                    breakpoints.add(int(args[0]))
-                except ValueError:
-                    print(f"Invalid breakpoint: {args[0]}")
-            else:
+            if not args:
                 breakpoints.add(pc // 4)
+            try:
+                breakpoints.add(int(args[0]))
+            except ValueError:
+                print(f"Invalid breakpoint: {args[0]}")
         elif cmd == "d" or cmd == "disable" or cmd == "delete":
-            if args:
-                try:
-                    breakpoints.remove(int(args[0]))
-                except ValueError:
-                    print(f"Invalid breakpoint: {args[0]}")
-            else:
+            if not args:
                 breakpoints = set()
+            try:
+                breakpoints.remove(int(args[0]))
+            except ValueError:
+                print(f"Invalid breakpoint: {args[0]}")
         elif cmd == "l" or cmd == "list":
             print(f"breakpoints: {", ".join([str(bp) for bp in breakpoints])}")
         elif cmd == "p" or cmd == "print":
-            # TODO: how to handle the possibilities
-            pass
+            if not args:
+                print_regs()
+                print_stack()
+                continue
+
+            if args[0] not in {"stack", "reg", "s", "r"}:
+                print(f"Invalid print object: {args[0]}")
+                continue
+
+            if args[0] in {"stack", "s"}:
+                # case 1: print entire stack
+                if len(args) == 1:
+                    print_stack()
+                    continue
+                # case 2: print stack range
+                # TODO: parse input e.g. print stack <start> <stop>
+                if len(args) != 3:
+                    print(f"Invalid syntax: {"TODO"}")
+                    continue
+            elif args[0] in {"reg", "r"}:
+                # case 1: print all regs
+                # print reg
+                if len(args) == 1:
+                    print_regs()
+                    continue
+                # case 2: specific reg
+                # print reg <reg>
+                if args[1] not in reg_to_bin.keys():
+                    print(f"Invalid register: {args[1]}")
+                    continue
+                if len(args) == 2:
+                    print(tc_b32_to_int(reg[reg_to_bin[args[1]]]))
+                    continue
+                if len(args) != 3:
+                    print(f"Invalid syntax: {"TODO"}")
+                    continue
+                if args[2] not in {"int", "float", "char", "bin", "i", "f", "c", "b"}:
+                    print(f"Invalid type: {args[2]}")
+                    continue
+                if args[2] in {"int", "i"}:
+                    print(tc_b32_to_int(reg[reg_to_bin[args[1]]]))
+                elif args[2] in {"float", "f"}:
+                    print(fp_f32_to_float(reg[reg_to_bin[args[1]]]))
+                elif args[2] in {"char", "c"}:
+                    print(chr(reg[reg_to_bin[args[1]]]))
+                elif args[2] in {"bin", "b"}:
+                    print(format(reg[reg_to_bin[args[1]]], "032b"))
+
+        elif cmd == "q" or "quit":
+            global debug
+            debug = False
+            return
         else:
             print(f"Invalid command: {cmd}")
     print()
@@ -408,15 +459,7 @@ def op_readf(args: list[int]):
 
 def op_readc(args: list[int]):
     global reg
-    while True:
-        try:
-            # TODO: OS compliant getch()
-            x = sys.stdin.read(1)
-            _ = sys.stdin.readline()
-            break
-        except Exception:
-            pass
-    reg[args[0]] = ord(x)
+    reg[args[0]] = ord(getch())
     step_pc()
 
 def op_writei(args: list[int]):
@@ -687,6 +730,7 @@ def op_storer(args: list[int]):
     mem[reg[args[1]] - 3] = reg[args[0]] << 24
     step_pc()
 
+# TODO: how to handle accidentally reading uninitialized memory
 def op_unimp(_):
     sys.exit(f"Error: operation {bin_to_opcode[ir >> 24]} unimplemented")
 
@@ -711,29 +755,40 @@ UINT32_MAX =  2 ** 32
 # TODO: report under/overflow
 # TODO: completely redo tc over/underflow - look at existing implementations
 def tc_int_to_b16(val: int) -> int:
-    while (val > INT16_MAX):
-        val -= UINT16_MAX
-    while (val < INT16_MIN):
-        val += UINT16_MAX
+    # while (val > INT16_MAX):
+    #     val -= UINT16_MAX
+    # while (val < INT16_MIN):
+    #     val += UINT16_MAX
+
+    # two's complement conversion
     if val < 0:
         val = -val
         val = (val ^ 0xffff) + 1
-    return val
+    return val & 0xffff
 
 # TODO: report under/overflow
 def tc_int_to_b32(val: int) -> int:
-    while (val > INT32_MAX):
-        val -= UINT32_MAX
-    while (val < INT32_MIN):
-        val += UINT32_MAX
+    # while (val > INT32_MAX):
+    #     val -= UINT32_MAX
+    # while (val < INT32_MIN):
+    #     val += UINT32_MAX
+
+    # two's complement conversion
     if val < 0:
         val = -val
         val = (val ^ 0xffffffff) + 1
-    return val
+    return val & 0xffffffff
 
 def tc_b16_to_b32(val: int) -> int:
-    if val & 1 << 15:
+    # sign extend negative numbers
+    if val & (1 << 15):
         val = val | (0xffff << 16)
+    return val
+
+def tc_b16_to_int(val: int) -> int:
+    if val & 1 << 15:
+        val = (val - 1) ^ 0xffff
+        val = -val
     return val
 
 def tc_b32_to_int(val: int) -> int:
@@ -743,23 +798,21 @@ def tc_b32_to_int(val: int) -> int:
     return val
 
 def tc_neg(val: int) -> int:
-    if val > 0:
-        val = (val ^ 0xffffffff) + 1
-    elif val < 0:
-        val = (val - 1) ^ 0xffffffff
-    else:
-        val = 0
-    return val
+    # if val > 0:
+    #     val = (val ^ 0xffffffff) + 1
+    # elif val < 0:
+    #     val = (val - 1) ^ 0xffffffff
+    # else:
+    #     val = 0
+    # return val
+    return (0 - val) & 0xffffffff
 
-# TODO: report under/overflow
 def tc_add(val1: int, val2: int) -> int:
     return (val1 + val2) & 0xffffffff
 
-# TODO: report under/overflow
 def tc_sub(val1: int, val2: int) -> int:
     return (val1 - val2) & 0xffffffff
 
-# TODO: this isn't wrapping - verify under/overflow
 def tc_mul(val1: int, val2: int) -> int:
     if (val1 & (1 << 31)):
         val1 = val1 | (0xffffffff << 32)
@@ -767,15 +820,27 @@ def tc_mul(val1: int, val2: int) -> int:
         val2 = val2 | (0xffffffff << 32) 
     return (val1 * val2) & 0xffffffff
 
-# TODO: verify accuracy
 def tc_div(val1: int, val2: int) -> int:
-    sign = (val1 & (1 << 31)) ^ (val2 & (1 << 31))
-    return sign | ((val1 & 0x7fffffff) // (val2 & 0x7fffffff))
+    sign = ((val1 & (1 << 31))) ^ ((val2 & (1 << 31)))
+    if val1 & (1 << 31):
+        val1 = tc_neg(val1)
+    if val2 & (1 << 31):
+        val2 = tc_neg(val2)
+    res = val1 // val2
+    if sign:
+        res = tc_neg(res)
+    return res
 
-# TODO: didn't actually test this at all. most definitely wrong
 def tc_mod(val1: int, val2: int) -> int:
-    sign = (val1 & (1 << 31)) ^ (val2 & (1 << 31))
-    return sign | ((val1 & 0x7fffffff) % (val2 & 0x7fffffff))
+    sign2 = ((val2 & (1 << 31)))
+    if val1 & (1 << 31):
+        val1 = tc_neg(val1)
+    if val2 & (1 << 31):
+        val2 = tc_neg(val2)
+    res = val1 % val2
+    if sign2:
+        res = tc_neg(res)
+    return res
 
 # Floating point helper functions
 
@@ -843,6 +908,32 @@ def extract_args(ir: int, mask: str) -> list[int]:
     return ret
 
 # Misc. helper functions
+
+# from https://stackoverflow.com/a/21659588
+# TODO: allow for KeyboardInterrupt
+def find_getch():
+    # Windows getch
+    if os.name == 'nt':
+        import msvcrt
+        return msvcrt.getch
+
+    # Posix getch
+    import termios
+    import sys
+    import tty
+    def _getch():
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            _ = tty.setraw(fd)
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return ch
+
+    return _getch
+
+getch = find_getch()
 
 # Returns True if s encodes an integer, and False otherwise.
 def is_int(s: str) -> bool:
