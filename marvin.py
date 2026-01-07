@@ -38,12 +38,12 @@ opcode_to_bin = {
     "seti":   0b01000000, "addi":    0b01000001, "setf":    0b01000010, "addf":    0b01000011,
     "copy":   0b01000100,
     # stack insructions
-    "pushw":  0b01010000, "popw":    0b01010001, "pushs":   0b01010010, "pops":    0b01010011,
-    "pushb":  0b01010100, "popb":    0b01010101,
+    "pushb":  0b01010000, "popb":    0b01010001, "pushs":   0b01010010, "pops":    0b01010011,
+    "pushw":  0b01010100, "popw":    0b01010101,
     # load/store instructions
-    "loadnw": 0b01100000, "storenw": 0b01100001, "loadrw":  0b01100010, "storerw": 0b01100011,
+    "loadnb": 0b01100000, "storenb": 0b01100001, "loadrb":  0b01100010, "storerb": 0b01100011,
     "loadns": 0b01100100, "storens": 0b01100101, "loadrs":  0b01100110, "storers": 0b01100111,
-    "loadnb": 0b01101000, "storenb": 0b01101001, "loadrb":  0b01101010, "storerb": 0b01101011,
+    "loadnw": 0b01101000, "storenw": 0b01101001, "loadrw":  0b01101010, "storerw": 0b01101011,
 }
 
 # Maps 8-bit binary codes to the opcodes they represent.
@@ -69,16 +69,13 @@ opcode_to_argmask = {
     # register instructions
     "seti":   "rn",  "addi":   "rn",  "setf":   "rf",  "addf":   "rf",
     "copy":   "rr",
-    # memory instructions
-    "pushr":  "rr",  "popr":   "rr",  "loadn":  "rrn", "storen": "rrn",
-    "loadr":  "rr",  "storer": "rr",
     # stack insructions
-    "pushw":  "rr", "popw":    "rr", "pushs":   "rr", "pops":    "rr",
-    "pushb":  "rr", "popb":    "rr",
+    "pushb":  "rr",  "popb":    "rr",  "pushs":  "rr", "pops":    "rr",
+    "pushw":  "rr",  "popw":    "rr",
     # load/store instructions
-    "loadnw": "rrn", "storenw": "rrn", "loadrw":  "rr", "storerw": "rr",
-    "loadns": "rrn", "storens": "rrn", "loadrs":  "rr", "storers": "rr",
-    "loadnb": "rrn", "storenb": "rrn", "loadrb":  "rr", "storerb": "rr",
+    "loadnb": "rrn", "storenb": "rrn", "loadrb": "rr", "storerb": "rr",
+    "loadns": "rrn", "storens": "rrn", "loadrs": "rr", "storers": "rr",
+    "loadnw": "rrn", "storenw": "rrn", "loadrw": "rr", "storerw": "rr",
 }
 
 # Maps opcodes to their costs.
@@ -324,8 +321,6 @@ def debug_exec():
 
     # Print current instruction; register and stack contents
     print(verbose_output[pc // 4], end="\n\n")
-    # print_regs()
-    # print_stack()
 
     # Get debug input.
     while cmd := input("> "):
@@ -696,7 +691,40 @@ def op_copy(args: list[int]):
     reg[args[0]] = reg[args[1]]
     step_pc()
 
-# Memory instructions
+# Stack instructions
+
+# TODO: clean up generic code for single bytes etc
+
+def op_pushb(args: list[int]):
+    global reg, mem
+    if reg[reg_to_bin["sp"]] <= reg[reg_to_bin["gp"]]:
+        sys.exit(f"Error: stack overflow attempting to execute instruction {pc // WORD_SIZE}; halting the machine")
+    mem[reg[args[1]] - 0] = reg[args[0]] & 0xff
+    reg[args[1]] = tc_sub(reg[args[1]], BYTE_SIZE)
+    step_pc()
+
+def op_popb(args: list[int]):
+    global reg
+    reg[args[1]] = tc_add(reg[args[1]], BYTE_SIZE)
+    word = mem[reg[args[1]] : reg[args[1]] - BYTE_SIZE : -1]
+    reg[args[0]] = word[0]
+    step_pc()
+
+def op_pushs(args: list[int]):
+    global reg, mem
+    if reg[reg_to_bin["sp"]] <= reg[reg_to_bin["gp"]]:
+        sys.exit(f"Error: stack overflow attempting to execute instruction {pc // WORD_SIZE}; halting the machine")
+    mem[reg[args[1]] - 0] = reg[args[0]] & 0xff
+    mem[reg[args[1]] - 1] = (reg[args[0]] >> 8) & 0xff
+    reg[args[1]] = tc_sub(reg[args[1]], SHORT_SIZE)
+    step_pc()
+
+def op_pops(args: list[int]):
+    global reg
+    reg[args[1]] = tc_add(reg[args[1]], SHORT_SIZE)
+    word = mem[reg[args[1]] : reg[args[1]] - SHORT_SIZE : -1]
+    reg[args[0]] = word[1] << 8 | word[0]
+    step_pc()
 
 def op_pushw(args: list[int]):
     global reg, mem
@@ -716,35 +744,56 @@ def op_popw(args: list[int]):
     reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
     step_pc()
 
-def op_pushs(args: list[int]):
-    global reg, mem
-    if reg[reg_to_bin["sp"]] <= reg[reg_to_bin["gp"]]:
-        sys.exit(f"Error: stack overflow attempting to execute instruction {pc // WORD_SIZE}; halting the machine")
-    mem[reg[args[1]] - 0] = reg[args[0]] & 0xff
-    mem[reg[args[1]] - 1] = (reg[args[0]] >> 8) & 0xff
-    reg[args[1]] = tc_sub(reg[args[1]], SHORT_SIZE)
+# Load/store instructions
+
+def op_loadnb(args: list[int]):
+    global reg
+    addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))
+    word = mem[addr : addr - BYTE_SIZE : -1]
+    reg[args[0]] = word[0]
     step_pc()
 
-def op_pops(args: list[int]):
+def op_storenb(args: list[int]):
+    global mem
+    addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))
+    mem[addr - 0] = reg[args[0]] & 0xff
+    step_pc()
+
+def op_loadrb(args: list[int]):
     global reg
-    reg[args[1]] = tc_add(reg[args[1]], SHORT_SIZE)
+    word = mem[reg[args[1]] : reg[args[1]] - BYTE_SIZE : -1]
+    reg[args[0]] = word[0]
+    step_pc()
+
+def op_storerb(args: list[int]):
+    global mem
+    mem[reg[args[1]] - 0] = reg[args[0]] & 0xff
+    step_pc()
+
+def op_loadns(args: list[int]):
+    global reg
+    addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))
+    word = mem[addr : addr - SHORT_SIZE : -1]
+    reg[args[0]] = word[1] << 8 | word[0]
+    step_pc()
+
+def op_storens(args: list[int]):
+    global mem
+    addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))
+    mem[addr - 0] = reg[args[0]] & 0xff
+    mem[addr - 1] = (reg[args[0]] >> 8) & 0xff
+    step_pc()
+
+def op_loadrs(args: list[int]):
+    global reg
     word = mem[reg[args[1]] : reg[args[1]] - SHORT_SIZE : -1]
     reg[args[0]] = word[1] << 8 | word[0]
     step_pc()
 
-def op_pushb(args: list[int]):
-    global reg, mem
-    if reg[reg_to_bin["sp"]] <= reg[reg_to_bin["gp"]]:
-        sys.exit(f"Error: stack overflow attempting to execute instruction {pc // WORD_SIZE}; halting the machine")
+def op_storers(args: list[int]):
+    global mem
     mem[reg[args[1]] - 0] = reg[args[0]] & 0xff
-    reg[args[1]] = tc_sub(reg[args[1]], BYTE_SIZE)
-    step_pc()
-
-def op_popb(args: list[int]):
-    global reg
-    reg[args[1]] = tc_add(reg[args[1]], BYTE_SIZE)
-    word = mem[reg[args[1]] : reg[args[1]] - BYTE_SIZE : -1]
-    reg[args[0]] = word[0]
+    mem[reg[args[1]] - 1] = (reg[args[0]] >> 8) & 0xff
     step_pc()
 
 def op_loadnw(args: list[int]):
@@ -777,56 +826,6 @@ def op_storerw(args: list[int]):
     mem[reg[args[1]] - 3] = (reg[args[0]] >> 24) & 0xff
     step_pc()
 
-def op_loadns(args: list[int]):
-    global reg
-    addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))
-    word = mem[addr : addr - SHORT_SIZE : -1]
-    reg[args[0]] = word[1] << 8 | word[0]
-    step_pc()
-
-def op_storens(args: list[int]):
-    global mem
-    addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))
-    mem[addr - 0] = reg[args[0]] & 0xff
-    mem[addr - 1] = (reg[args[0]] >> 8) & 0xff
-    step_pc()
-
-def op_loadrs(args: list[int]):
-    global reg
-    word = mem[reg[args[1]] : reg[args[1]] - SHORT_SIZE : -1]
-    reg[args[0]] = word[1] << 8 | word[0]
-    step_pc()
-
-def op_storers(args: list[int]):
-    global mem
-    mem[reg[args[1]] - 0] = reg[args[0]] & 0xff
-    mem[reg[args[1]] - 1] = (reg[args[0]] >> 8) & 0xff
-    step_pc()
-
-def op_loadnb(args: list[int]):
-    global reg
-    addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))
-    word = mem[addr : addr - BYTE_SIZE : -1]
-    reg[args[0]] = word[0]
-    step_pc()
-
-def op_storenb(args: list[int]):
-    global mem
-    addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))
-    mem[addr - 0] = reg[args[0]] & 0xff
-    step_pc()
-
-def op_loadrb(args: list[int]):
-    global reg
-    word = mem[reg[args[1]] : reg[args[1]] - BYTE_SIZE : -1]
-    reg[args[0]] = word[0]
-    step_pc()
-
-def op_storerb(args: list[int]):
-    global mem
-    mem[reg[args[1]] - 0] = reg[args[0]] & 0xff
-    step_pc()
-
 # TODO: how to handle accidentally reading uninitialized memory
 def op_unimp(_):
     sys.exit(f"Error: operation {bin_to_opcode[ir >> 24]} unimplemented")
@@ -837,26 +836,12 @@ for op in opcode_to_bin.keys():
     func = "op_" + op
     instructions[op] = globals()[func] if func in globals() else op_unimp
 
-# Integer constants
-
-INT16_MIN  = -2 ** 15
-INT16_MAX  =  2 ** 15 - 1
-UINT16_MAX =  2 ** 16
-INT32_MIN  = -2 ** 31
-INT32_MAX  =  2 ** 31 - 1
-UINT32_MAX =  2 ** 32
-
 # Two's complement helper functions
 
 # TODO: combine into one function tc_int_to_bin(val: int, width: int) -> int
 # TODO: report under/overflow
 # TODO: completely redo tc over/underflow - look at existing implementations
 def tc_int_to_b16(val: int) -> int:
-    # while (val > INT16_MAX):
-    #     val -= UINT16_MAX
-    # while (val < INT16_MIN):
-    #     val += UINT16_MAX
-
     # two's complement conversion
     if val < 0:
         val = -val
@@ -865,11 +850,6 @@ def tc_int_to_b16(val: int) -> int:
 
 # TODO: report under/overflow
 def tc_int_to_b32(val: int) -> int:
-    # while (val > INT32_MAX):
-    #     val -= UINT32_MAX
-    # while (val < INT32_MIN):
-    #     val += UINT32_MAX
-
     # two's complement conversion
     if val < 0:
         val = -val
@@ -895,13 +875,6 @@ def tc_b32_to_int(val: int) -> int:
     return val
 
 def tc_neg(val: int) -> int:
-    # if val > 0:
-    #     val = (val ^ 0xffffffff) + 1
-    # elif val < 0:
-    #     val = (val - 1) ^ 0xffffffff
-    # else:
-    #     val = 0
-    # return val
     return (0 - val) & 0xffffffff
 
 def tc_add(val1: int, val2: int) -> int:
