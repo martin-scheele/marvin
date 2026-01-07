@@ -20,26 +20,30 @@ the emulator prints the assembled instructions to stdout before simulating them.
 # Maps opcodes to their binary 8-bit codes.
 opcode_to_bin = {
     # system instructions
-    "halt":   0b00000000, "readi":  0b00000001, "readf":  0b00000010, "readc":  0b00000011,
-    "writei": 0b00000100, "writef": 0b00000101, "writec": 0b00000110, "seed":   0b00000111,
-    "rand":   0b00001000, "time":   0b00001001, "date":   0b00001010, "nop":    0b00001111,
+    "halt":   0b00000000, "readi":   0b00000001, "readf":   0b00000010, "readc":   0b00000011,
+    "writei": 0b00000100, "writef":  0b00000101, "writec":  0b00000110, "seed":    0b00000111,
+    "rand":   0b00001000, "time":    0b00001001, "date":    0b00001010, "nop":     0b00001111,
     # arithmetic instructions
-    "add":    0b00010000, "sub":    0b00010001, "mul":    0b00010010, "div":    0b00010011,
-    "mod":    0b00010100, "neg":    0b00010101, "fadd":   0b00010110, "fsub":   0b00010111,
-    "fmul":   0b00011000, "fdiv":   0b00011001, "fneg":   0b00011010,
+    "add":    0b00010000, "sub":     0b00010001, "mul":     0b00010010, "div":     0b00010011,
+    "mod":    0b00010100, "neg":     0b00010101, "fadd":    0b00010110, "fsub":    0b00010111,
+    "fmul":   0b00011000, "fdiv":    0b00011001, "fneg":    0b00011010,
     # bitwise instructions
-    "and":    0b00100000, "or":     0b00100001, "xor":    0b00100010, "not":    0b00100011,
-    "lshl":   0b00100100, "lshr":   0b00100101, "ashl":   0b00100110, "ashr":   0b00100111,
+    "and":    0b00100000, "or":      0b00100001, "xor":     0b00100010, "not":     0b00100011,
+    "lshl":   0b00100100, "lshr":    0b00100101, "ashl":    0b00100110, "ashr":    0b00100111,
     # jump instructions
-    "jumpn":  0b00110000, "jumpr":  0b00110001, "jeqzn":  0b00110010, "jnezn":  0b00110011,
-    "jgen":   0b00110100, "jlen":   0b00110101, "jeqn":   0b00110110, "jnen":   0b00110111,
-    "jgtn":   0b00111000, "jltn":   0b00111001, "calln":  0b00111010,
+    "jumpn":  0b00110000, "jumpr":   0b00110001, "jeqzn":   0b00110010, "jnezn":   0b00110011,
+    "jgen":   0b00110100, "jlen":    0b00110101, "jeqn":    0b00110110, "jnen":    0b00110111,
+    "jgtn":   0b00111000, "jltn":    0b00111001, "calln":   0b00111010,
     # register instructions
-    "setn":   0b01000000, "addn":   0b01000001, "setf":   0b01000010, "addf":   0b01000011,
+    "seti":   0b01000000, "addi":    0b01000001, "setf":    0b01000010, "addf":    0b01000011,
     "copy":   0b01000100,
-    # memory instructions
-    "pushr":  0b01010000, "popr":   0b01010001, "loadn":  0b01010010, "storen": 0b01010011,
-    "loadr":  0b01010100, "storer": 0b01010101,
+    # stack insructions
+    "pushw":  0b01010000, "popw":    0b01010001, "pushs":   0b01010010, "pops":    0b01010011,
+    "pushb":  0b01010100, "popb":    0b01010101,
+    # load/store instructions
+    "loadnw": 0b01100000, "storenw": 0b01100001, "loadrw":  0b01100010, "storerw": 0b01100011,
+    "loadns": 0b01100100, "storens": 0b01100101, "loadrs":  0b01100110, "storers": 0b01100111,
+    "loadnb": 0b01101000, "storenb": 0b01101001, "loadrb":  0b01101010, "storerb": 0b01101011,
 }
 
 # Maps 8-bit binary codes to the opcodes they represent.
@@ -63,11 +67,18 @@ opcode_to_argmask = {
     "jgen":   "rrn", "jlen":   "rrn", "jeqn":   "rrn", "jnen":   "rrn",
     "jgtn":   "rrn", "jltn":   "rrn", "calln":  "rn",
     # register instructions
-    "setn":   "rn",  "addn":   "rn",  "setf":   "rf",  "addf":   "rf",
+    "seti":   "rn",  "addi":   "rn",  "setf":   "rf",  "addf":   "rf",
     "copy":   "rr",
     # memory instructions
     "pushr":  "rr",  "popr":   "rr",  "loadn":  "rrn", "storen": "rrn",
     "loadr":  "rr",  "storer": "rr",
+    # stack insructions
+    "pushw":  "rr", "popw":    "rr", "pushs":   "rr", "pops":    "rr",
+    "pushb":  "rr", "popb":    "rr",
+    # load/store instructions
+    "loadnw": "rrn", "storenw": "rrn", "loadrw":  "rr", "storerw": "rr",
+    "loadns": "rrn", "storens": "rrn", "loadrs":  "rr", "storers": "rr",
+    "loadnb": "rrn", "storenb": "rrn", "loadrb":  "rr", "storerb": "rr",
 }
 
 # Maps opcodes to their costs.
@@ -106,8 +117,8 @@ def main():
     parser = argparse.ArgumentParser(description=description)
     _ = parser.add_argument("filename", help="input .marv file")
     _ = parser.add_argument("-v", "--verbose", action="store_true", help="enable verbose output")
-    _ = parser.add_argument("-d", "--debug", action="store_true", help="enable debug mode")
-    _ = parser.add_argument("-c", "--count", action="store_true", help="count instruction calls")
+    _ = parser.add_argument("-d", "--debug",   action="store_true", help="enable debug mode")
+    _ = parser.add_argument("-c", "--count",   action="store_true", help="count instruction calls")
     args = parser.parse_args()
 
     global debug, verbose, count_calls
@@ -248,7 +259,9 @@ mem = [0] * 65536   # main memory
 pc = 0              # program counter
 ir = 0              # instruction register
 
-WORD_SIZE = 4
+WORD_SIZE  = 4
+SHORT_SIZE = 2
+BYTE_SIZE  = 1
 
 def step_pc():
     global pc
@@ -496,6 +509,9 @@ def op_time(args: list[int]):
 def op_date(args: list[int]):
     global reg
     today = datetime.date.today()
+    # [31:13]: year  - 19 bits - 524287 values
+    # [12:9]:  month - 4  bits - 16     values
+    # [8:0]:   day   - 9  bits - 512    values
     reg[args[0]] = today.year << 13 | today.month << 9 | today.day
     step_pc()
 
@@ -617,35 +633,35 @@ def op_jumpr(args: list[int]):
 
 def op_jeqzn(args: list[int]):
     global pc
-    pc = args[1] * WORD_SIZE if reg[args[0]] == 0 else pc + WORD_SIZE
+    pc = args[1] * WORD_SIZE if tc_b32_to_int(reg[args[0]]) == 0 else pc + WORD_SIZE
 
 def op_jnezn(args: list[int]):
     global pc
-    pc = args[1] * WORD_SIZE if reg[args[0]] != 0 else pc + WORD_SIZE
+    pc = args[1] * WORD_SIZE if tc_b32_to_int(reg[args[0]]) != 0 else pc + WORD_SIZE
 
 def op_jgen(args: list[int]):
     global pc
-    pc = args[2] * WORD_SIZE if reg[args[0]] >= reg[args[1]] else pc + WORD_SIZE
+    pc = args[2] * WORD_SIZE if tc_b32_to_int(reg[args[0]]) >= tc_b32_to_int(reg[args[1]]) else pc + WORD_SIZE
 
 def op_jlen(args: list[int]):
     global pc
-    pc = args[2] * WORD_SIZE if reg[args[0]] <= reg[args[1]] else pc + WORD_SIZE
+    pc = args[2] * WORD_SIZE if tc_b32_to_int(reg[args[0]]) <= tc_b32_to_int(reg[args[1]]) else pc + WORD_SIZE
 
 def op_jeqn(args: list[int]):
     global pc
-    pc = args[2] * WORD_SIZE if reg[args[0]] == reg[args[1]] else pc + WORD_SIZE
+    pc = args[2] * WORD_SIZE if tc_b32_to_int(reg[args[0]]) == tc_b32_to_int(reg[args[1]]) else pc + WORD_SIZE
 
 def op_jnen(args: list[int]):
     global pc
-    pc = args[2] * WORD_SIZE if reg[args[0]] != reg[args[1]] else pc + WORD_SIZE
+    pc = args[2] * WORD_SIZE if tc_b32_to_int(reg[args[0]]) != tc_b32_to_int(reg[args[1]]) else pc + WORD_SIZE
 
 def op_jgtn(args: list[int]):
     global pc
-    pc = args[2] * WORD_SIZE if reg[args[0]] > reg[args[1]] else pc + WORD_SIZE
+    pc = args[2] * WORD_SIZE if tc_b32_to_int(reg[args[0]]) > tc_b32_to_int(reg[args[1]]) else pc + WORD_SIZE
 
 def op_jltn(args: list[int]):
     global pc
-    pc = args[2] * WORD_SIZE if reg[args[0]] < reg[args[1]] else pc + WORD_SIZE
+    pc = args[2] * WORD_SIZE if tc_b32_to_int(reg[args[0]]) < tc_b32_to_int(reg[args[1]]) else pc + WORD_SIZE
 
 def op_calln(args: list[int]):
     global reg, pc
@@ -655,12 +671,12 @@ def op_calln(args: list[int]):
 
 # Register instructions
 
-def op_setn(args: list[int]):
+def op_seti(args: list[int]):
     global reg
     reg[args[0]] = tc_b16_to_b32(args[1])
     step_pc()
 
-def op_addn(args: list[int]):
+def op_addi(args: list[int]):
     global reg
     reg[args[0]] = tc_add(reg[args[0]], tc_b16_to_b32(args[1]))
     step_pc()
@@ -682,52 +698,133 @@ def op_copy(args: list[int]):
 
 # Memory instructions
 
-def op_pushr(args: list[int]):
+def op_pushw(args: list[int]):
     global reg, mem
     if reg[reg_to_bin["sp"]] <= reg[reg_to_bin["gp"]]:
         sys.exit(f"Error: stack overflow attempting to execute instruction {pc // WORD_SIZE}; halting the machine")
-    mem[reg[args[1]] - 0] = (reg[args[0]] & (0xff << 0)) >> 0
-    mem[reg[args[1]] - 1] = (reg[args[0]] & (0xff << 8)) >> 8
-    mem[reg[args[1]] - 2] = (reg[args[0]] & (0xff << 16)) >> 16
-    mem[reg[args[1]] - 3] = (reg[args[0]] & (0xff << 24)) >> 24
+    mem[reg[args[1]] - 0] = reg[args[0]] & 0xff
+    mem[reg[args[1]] - 1] = (reg[args[0]] >> 8) & 0xff
+    mem[reg[args[1]] - 2] = (reg[args[0]] >> 16) & 0xff
+    mem[reg[args[1]] - 3] = (reg[args[0]] >> 24) & 0xff
     reg[args[1]] = tc_sub(reg[args[1]], WORD_SIZE)
     step_pc()
 
-def op_popr(args: list[int]):
+def op_popw(args: list[int]):
     global reg
     reg[args[1]] = tc_add(reg[args[1]], WORD_SIZE)
     word = mem[reg[args[1]] : reg[args[1]] - WORD_SIZE : -1]
     reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
     step_pc()
 
-def op_loadn(args: list[int]):
+def op_pushs(args: list[int]):
+    global reg, mem
+    if reg[reg_to_bin["sp"]] <= reg[reg_to_bin["gp"]]:
+        sys.exit(f"Error: stack overflow attempting to execute instruction {pc // WORD_SIZE}; halting the machine")
+    mem[reg[args[1]] - 0] = reg[args[0]] & 0xff
+    mem[reg[args[1]] - 1] = (reg[args[0]] >> 8) & 0xff
+    reg[args[1]] = tc_sub(reg[args[1]], SHORT_SIZE)
+    step_pc()
+
+def op_pops(args: list[int]):
+    global reg
+    reg[args[1]] = tc_add(reg[args[1]], SHORT_SIZE)
+    word = mem[reg[args[1]] : reg[args[1]] - SHORT_SIZE : -1]
+    reg[args[0]] = word[1] << 8 | word[0]
+    step_pc()
+
+def op_pushb(args: list[int]):
+    global reg, mem
+    if reg[reg_to_bin["sp"]] <= reg[reg_to_bin["gp"]]:
+        sys.exit(f"Error: stack overflow attempting to execute instruction {pc // WORD_SIZE}; halting the machine")
+    mem[reg[args[1]] - 0] = reg[args[0]] & 0xff
+    reg[args[1]] = tc_sub(reg[args[1]], BYTE_SIZE)
+    step_pc()
+
+def op_popb(args: list[int]):
+    global reg
+    reg[args[1]] = tc_add(reg[args[1]], BYTE_SIZE)
+    word = mem[reg[args[1]] : reg[args[1]] - BYTE_SIZE : -1]
+    reg[args[0]] = word[0]
+    step_pc()
+
+def op_loadnw(args: list[int]):
     global reg
     addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))
     word = mem[addr : addr - WORD_SIZE : -1]
     reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
     step_pc()
 
-def op_storen(args: list[int]):
+def op_storenw(args: list[int]):
     global mem
     addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))
-    mem[addr - 0] = reg[args[0]] << 0
-    mem[addr - 1] = reg[args[0]] << 8
-    mem[addr - 2] = reg[args[0]] << 16
-    mem[addr - 3] = reg[args[0]] << 24
+    mem[addr - 0] = reg[args[0]] & 0xff
+    mem[addr - 1] = (reg[args[0]] >> 8) & 0xff
+    mem[addr - 2] = (reg[args[0]] >> 16) & 0xff
+    mem[addr - 3] = (reg[args[0]] >> 24) & 0xff
     step_pc()
 
-def op_loadr(args: list[int]):
+def op_loadrw(args: list[int]):
     global reg
     word = mem[reg[args[1]] : reg[args[1]] - WORD_SIZE : -1]
     reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
     step_pc()
 
-def op_storer(args: list[int]):
+def op_storerw(args: list[int]):
     global mem
-    mem[reg[args[1]] - 0] = reg[args[0]] << 0
-    mem[reg[args[1]] - 1] = reg[args[0]] << 8
-    mem[reg[args[1]] - 2] = reg[args[0]] << 16
-    mem[reg[args[1]] - 3] = reg[args[0]] << 24
+    mem[reg[args[1]] - 0] = reg[args[0]] & 0xff
+    mem[reg[args[1]] - 1] = (reg[args[0]] >> 8) & 0xff
+    mem[reg[args[1]] - 2] = (reg[args[0]] >> 16) & 0xff
+    mem[reg[args[1]] - 3] = (reg[args[0]] >> 24) & 0xff
+    step_pc()
+
+def op_loadns(args: list[int]):
+    global reg
+    addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))
+    word = mem[addr : addr - SHORT_SIZE : -1]
+    reg[args[0]] = word[1] << 8 | word[0]
+    step_pc()
+
+def op_storens(args: list[int]):
+    global mem
+    addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))
+    mem[addr - 0] = reg[args[0]] & 0xff
+    mem[addr - 1] = (reg[args[0]] >> 8) & 0xff
+    step_pc()
+
+def op_loadrs(args: list[int]):
+    global reg
+    word = mem[reg[args[1]] : reg[args[1]] - SHORT_SIZE : -1]
+    reg[args[0]] = word[1] << 8 | word[0]
+    step_pc()
+
+def op_storers(args: list[int]):
+    global mem
+    mem[reg[args[1]] - 0] = reg[args[0]] & 0xff
+    mem[reg[args[1]] - 1] = (reg[args[0]] >> 8) & 0xff
+    step_pc()
+
+def op_loadnb(args: list[int]):
+    global reg
+    addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))
+    word = mem[addr : addr - BYTE_SIZE : -1]
+    reg[args[0]] = word[0]
+    step_pc()
+
+def op_storenb(args: list[int]):
+    global mem
+    addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))
+    mem[addr - 0] = reg[args[0]] & 0xff
+    step_pc()
+
+def op_loadrb(args: list[int]):
+    global reg
+    word = mem[reg[args[1]] : reg[args[1]] - BYTE_SIZE : -1]
+    reg[args[0]] = word[0]
+    step_pc()
+
+def op_storerb(args: list[int]):
+    global mem
+    mem[reg[args[1]] - 0] = reg[args[0]] & 0xff
     step_pc()
 
 # TODO: how to handle accidentally reading uninitialized memory
