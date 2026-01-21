@@ -38,8 +38,8 @@ opcode_to_bin = {
     "seti":   0b01000000, "addi":    0b01000001, "setf":    0b01000010, "addf":    0b01000011,
     "copy":   0b01000100,
     # stack insructions
-    "pushb":  0b01010000, "popb":    0b01010001, "pushs":   0b01010010, "pops":    0b01010011,
-    "pushw":  0b01010100, "popw":    0b01010101,
+    "pushrb": 0b01010000, "poprb":   0b01010001, "pushrs":  0b01010010, "poprs":   0b01010011,
+    "pushrw": 0b01010100, "poprw":   0b01010101,
     # load/store instructions
     "loadnb": 0b01100000, "storenb": 0b01100001, "loadrb":  0b01100010, "storerb": 0b01100011,
     "loadns": 0b01100100, "storens": 0b01100101, "loadrs":  0b01100110, "storers": 0b01100111,
@@ -70,8 +70,8 @@ opcode_to_argmask = {
     "seti":   "rn",  "addi":   "rn",  "setf":   "rf",  "addf":   "rf",
     "copy":   "rr",
     # stack insructions
-    "pushb":  "rr",  "popb":    "rr",  "pushs":  "rr", "pops":    "rr",
-    "pushw":  "rr",  "popw":    "rr",
+    "pushrb": "rr",  "poprb":  "rr",  "pushrs": "rr", "poprs":   "rr",
+    "pushrw": "rr",  "poprw":  "rr",
     # load/store instructions
     "loadnb": "rrn", "storenb": "rrn", "loadrb": "rr", "storerb": "rr",
     "loadns": "rrn", "storens": "rrn", "loadrs": "rr", "storers": "rr",
@@ -196,9 +196,9 @@ def validate_marv(inFile: str) -> list[tuple[int, int, str, *tuple[str, ...]]]:
         lineno, id, opcode, args = t[0], t[1], t[2], t[3:]
         if opcode in {"jumpn"} and int(args[0]) >= len(tuples):
             sys.exit(f"Error {inFile}@{lineno}: invalid instruction address '{args[0]}'")
-        elif opcode in {"addn", "setn"} and not valid_int(int(args[1])):
+        elif opcode in {"addi", "seti"} and not valid_int(int(args[1])):
             sys.exit(f"Error {inFile}@{lineno}: invalid number '{args[1]}'")
-        elif opcode in {"loadn", "storen"} and not valid_int(int(args[2])):
+        elif opcode in {"loadnb", "storenb", "loadns", "storens", "loadnw", "storenw"} and not valid_int(int(args[2])):
             sys.exit(f"Error {inFile}@{lineno}: invalid address '{args[2]}'")
         elif opcode in {"calln", "jeqzn", "jnezn"} and int(args[1]) >= len(tuples):
             sys.exit(f"Error {inFile}@{lineno}: invalid instruction address '{args[1]}'")
@@ -355,11 +355,9 @@ def debug_exec():
                 print_regs()
                 print_stack()
                 continue
-
             if args[0] not in {"stack", "reg", "s", "r"}:
                 print(f"Invalid print object: {args[0]}")
                 continue
-
             if args[0] in {"stack", "s"}:
                 # case 1: print entire stack
                 if len(args) == 1:
@@ -384,6 +382,7 @@ def debug_exec():
                 if len(args) == 2:
                     print(tc_b32_to_int(reg[reg_to_bin[args[1]]]))
                     continue
+                # case 3: print reg <reg> <type>
                 if len(args) != 3:
                     print(f"Invalid syntax: {"TODO"}")
                     continue
@@ -695,7 +694,7 @@ def op_copy(args: list[int]):
 
 # TODO: clean up generic code for single bytes etc
 
-def op_pushb(args: list[int]):
+def op_pushrb(args: list[int]):
     global reg, mem
     if reg[reg_to_bin["sp"]] <= reg[reg_to_bin["gp"]]:
         sys.exit(f"Error: stack overflow attempting to execute instruction {pc // WORD_SIZE}; halting the machine")
@@ -703,14 +702,14 @@ def op_pushb(args: list[int]):
     reg[args[1]] = tc_sub(reg[args[1]], BYTE_SIZE)
     step_pc()
 
-def op_popb(args: list[int]):
+def op_poprb(args: list[int]):
     global reg
     reg[args[1]] = tc_add(reg[args[1]], BYTE_SIZE)
     word = mem[reg[args[1]] : reg[args[1]] - BYTE_SIZE : -1]
     reg[args[0]] = word[0]
     step_pc()
 
-def op_pushs(args: list[int]):
+def op_pushrs(args: list[int]):
     global reg, mem
     if reg[reg_to_bin["sp"]] <= reg[reg_to_bin["gp"]]:
         sys.exit(f"Error: stack overflow attempting to execute instruction {pc // WORD_SIZE}; halting the machine")
@@ -719,14 +718,14 @@ def op_pushs(args: list[int]):
     reg[args[1]] = tc_sub(reg[args[1]], SHORT_SIZE)
     step_pc()
 
-def op_pops(args: list[int]):
+def op_poprs(args: list[int]):
     global reg
     reg[args[1]] = tc_add(reg[args[1]], SHORT_SIZE)
     word = mem[reg[args[1]] : reg[args[1]] - SHORT_SIZE : -1]
     reg[args[0]] = word[1] << 8 | word[0]
     step_pc()
 
-def op_pushw(args: list[int]):
+def op_pushrw(args: list[int]):
     global reg, mem
     if reg[reg_to_bin["sp"]] <= reg[reg_to_bin["gp"]]:
         sys.exit(f"Error: stack overflow attempting to execute instruction {pc // WORD_SIZE}; halting the machine")
@@ -737,7 +736,7 @@ def op_pushw(args: list[int]):
     reg[args[1]] = tc_sub(reg[args[1]], WORD_SIZE)
     step_pc()
 
-def op_popw(args: list[int]):
+def op_poprw(args: list[int]):
     global reg
     reg[args[1]] = tc_add(reg[args[1]], WORD_SIZE)
     word = mem[reg[args[1]] : reg[args[1]] - WORD_SIZE : -1]
