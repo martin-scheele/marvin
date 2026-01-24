@@ -1,0 +1,3 @@
+0 setn r4 1
+1 pushr r4 sp
+2 jumpn 1
