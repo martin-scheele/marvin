@@ -177,10 +177,7 @@ def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]], verbose: bool
             bArg1, bArg2, bArg3 = 0, 0, reg2bin[args[0]] << 4 | reg2bin[args[1]]
         elif opcode in {"addn", "setn"}:
             bArg1 = reg2bin[args[0]]
-            val = int(args[1])
-            if val < 0:
-                val = -val
-                val = (val ^ 0xffff) + 1
+            val = tc_int216b(int(args[1]))
             bArg2, bArg3 = val >> 8, val & 0xff
         elif opcode in {"calln", "jeqzn", "jnezn"}:
             bArg1 = reg2bin[args[0]]
@@ -194,10 +191,7 @@ def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]], verbose: bool
             bArg2, bArg3 = val >> 8, val & 0xff
         elif opcode in {"loadn", "storen"}:
             bArg1 = reg2bin[args[0]] << 4 | reg2bin[args[1]]
-            val = int(args[2])
-            if val < 0:
-                val = -val
-                val = (val ^ 0xffff) + 1
+            val = tc_int216b(int(args[2]))
             bArg2, bArg3 = val >> 8, val & 0xff
 
         op = opcode2bin[opcode]
@@ -240,8 +234,8 @@ def simulate(machineCodes: list[int], debug: bool):
     for i, v in enumerate(machineCodes):
         mem[i] = v
 
-    # Find end of stack
-    stack_end = len(machineCodes)
+    # Initialize end of stack; 8K of text
+    stack_end = 8192
 
     while True:
         # Fetch the next instruction to simulate.
@@ -250,7 +244,6 @@ def simulate(machineCodes: list[int], debug: bool):
         except IndexError:
             sys.exit(f"Error: attempted to execute mem['{pc}']; halting the machine")
 
-
         # Extract the opcode.
         code = ir
         op = code >> 24
@@ -258,22 +251,27 @@ def simulate(machineCodes: list[int], debug: bool):
 
         # Debug stub
         if debug:
-            print(f"pc: {pc} opcode: {opcode}")
-            print(f"r0:  {reg[0]: 10d} r1:  {reg[1]: 10d} r2:  {reg[2]: 10d} r3:  {reg[3]: 10d}")
-            print(f"r4:  {reg[4]: 10d} r5:  {reg[5]: 10d} r6:  {reg[6]: 10d} r7:  {reg[7]: 10d}")
-            print(f"r8:  {reg[8]: 10d} r9:  {reg[9]: 10d} r10: {reg[10]: 10d} r11: {reg[11]: 10d}")
-            print(f"r12: {reg[12]: 10d} r13: {reg[13]: 10d} r14: {reg[14]: 10d} r15: {reg[15]: 10d}")
-            for i in range(65535, reg[15] - 1, -1):
-                if i == reg[14]:
-                    print("*", end="")
-                if i == reg[15]:
-                    print("^", end="")
-                print(mem[i])
-            _ = input()
+            debug_exec(code)
 
         # Simulation the instruction given by opcode.
+        # NOTE: can pass only lower 24 bits of code
         instructions[opcode](code)
 
+def debug_exec(code: int):
+    global reg, mem, pc
+    opcode = bin2opcode[code >> 24]
+    print(f"pc: {pc} opcode: {opcode}")
+    print(f"r0:  {tc_32b2int(reg[0]): 10d} r1:  {tc_32b2int(reg[1]): 10d} r2:  {tc_32b2int(reg[2]): 10d} r3:  {tc_32b2int(reg[3]): 10d}")
+    print(f"r4:  {tc_32b2int(reg[4]): 10d} r5:  {tc_32b2int(reg[5]): 10d} r6:  {tc_32b2int(reg[6]): 10d} r7:  {tc_32b2int(reg[7]): 10d}")
+    print(f"r8:  {tc_32b2int(reg[8]): 10d} r9:  {tc_32b2int(reg[9]): 10d} r10: {tc_32b2int(reg[10]): 10d} r11: {tc_32b2int(reg[11]): 10d}")
+    print(f"r12: {tc_32b2int(reg[12]): 10d} r13: {tc_32b2int(reg[13]): 10d} r14: {tc_32b2int(reg[14]): 10d} r15: {tc_32b2int(reg[15]): 10d}")
+    for i in range(65535, tc_32b2int(reg[15]) - 1, -1):
+        if i == reg[14]:
+            print("*", end="")
+        if i == reg[15]:
+            print("^", end="")
+        print(mem[i])
+    _ = input()
 
 def op_halt(code: int):
     sys.exit()
@@ -289,13 +287,13 @@ def op_read(code: int):
             raise ValueError
         except ValueError:
             print("Illegal input: number must be in [-32768, 32767]")
-    reg[arg1] = x
+    reg[arg1] = tc_int232b(x)
     pc += 1
 
 def op_write(code: int):
     global reg, pc
     arg1 = code & 0xf
-    print(reg[arg1])
+    print(tc_32b2int(reg[arg1]))
     pc += 1
 
 def op_nop(code: int):
@@ -342,14 +340,14 @@ def op_neg(code: int):
     global reg, pc
     arg1 = (code & 0xf << 4) >> 4
     arg2 = code & 0xf
-    reg[arg1] = -reg[arg2]
+    reg[arg1] = tc_neg(reg[arg2])
     pc += 1
 
 def op_popr(code: int):
     global reg, mem, pc
     arg1 = (code & 0xf << 4) >> 4
     arg2 = code & 0xf
-    reg[arg2] += 1
+    reg[arg2] = tc_add(reg[arg2], 1)
     reg[arg1] = mem[reg[arg2]]
     pc += 1
 
@@ -360,7 +358,7 @@ def op_pushr(code: int):
     arg1 = (code & 0xf << 4) >> 4
     arg2 = code & 0xf
     mem[reg[arg2]] = reg[arg1]
-    reg[arg2] -= 1
+    reg[arg2] = tc_sub(reg[arg2], 1)
     pc += 1
 
 def op_storer(code: int):
@@ -374,17 +372,14 @@ def op_addn(code: int):
     global reg, pc
     arg1 = (code & 0xf << 16) >> 16
     arg2 = code & 0xffff
-    # TODO: solve two's complement arithmetic for addn, setn, loadn, storen
-    if ((arg2 & 0b1 << 15) >> 15):
-        arg2 = (arg2 - 1) ^ 0xffff
-        arg2 = -arg2
-    reg[arg1] += arg2
+    reg[arg1] = tc_add(reg[arg1], tc_16b232b(arg2))
     pc += 1
 
 def op_calln(code: int):
     global reg, pc
     arg1 = (code & 0xf << 16) >> 16
     arg2 = code & 0xffff
+    # I think this is guaranteed to never be over integer limit
     reg[arg1] = pc + 1
     pc = arg2
 
@@ -405,20 +400,14 @@ def op_loadn(code: int):
     arg1 = (code & 0xf << 20) >> 20
     arg2 = (code & 0xf << 16) >> 16
     arg3 = code & 0xffff
-    if ((arg3 & 0b1 << 15) >> 15):
-        arg3 = (arg3 - 1) ^ 0xffff
-        arg3 = -arg3
-    reg[arg1] = mem[reg[arg2] + arg3]
+    reg[arg1] = mem[tc_add(reg[arg2], tc_16b232b(arg3))]
     pc += 1
 
 def op_setn(code: int):
     global reg, pc
     arg1 = (code & 0xf << 16) >> 16 
     arg2 = code & 0xffff
-    if ((arg2 & 0b1 << 15) >> 15):
-        arg2 = (arg2 - 1) ^ 0xffff
-        arg2 = -arg2
-    reg[arg1] = arg2
+    reg[arg1] = tc_16b232b(arg2)
     pc += 1
 
 def op_storen(code: int):
@@ -426,10 +415,7 @@ def op_storen(code: int):
     arg1 = (code & 0xf << 20) >> 20
     arg2 = (code & 0xf << 16) >> 16
     arg3 = code & 0xffff
-    if ((arg3 & 0b1 << 15) >> 15):
-        arg3 = (arg3 - 1) ^ 0xffff
-        arg3 = -arg3
-    mem[reg[arg2] + arg3] = reg[arg1]
+    mem[tc_add(reg[arg2], tc_16b232b(arg3))] = reg[arg1]
     pc += 1
 
 def op_add(code: int):
@@ -437,7 +423,7 @@ def op_add(code: int):
     arg1 = (code & 0xf << 8) >> 8
     arg2 = (code & 0xf << 4) >> 4 
     arg3 = code & 0xf
-    reg[arg1] = reg[arg2] + reg[arg3]
+    reg[arg1] = tc_add(reg[arg2], reg[arg3])
     pc += 1
 
 def op_div(code: int):
@@ -445,7 +431,7 @@ def op_div(code: int):
     arg1 = (code & 0xf << 8) >> 8
     arg2 = (code & 0xf << 4) >> 4
     arg3 = code & 0xf
-    reg[arg1] = reg[arg2] // reg[arg3]
+    reg[arg1] = tc_div(reg[arg2], reg[arg3])
     pc += 1
 
 def op_mod(code: int):
@@ -461,7 +447,7 @@ def op_mul(code: int):
     arg1 = (code & 0xf << 8) >> 8
     arg2 = (code & 0xf << 4) >> 4
     arg3 = code & 0xf
-    reg[arg1] = reg[arg2] * reg[arg3]
+    reg[arg1] = tc_mul(reg[arg2], reg[arg3])
     pc += 1
 
 def op_sub(code: int):
@@ -469,7 +455,7 @@ def op_sub(code: int):
     arg1 = (code & 0xf << 8) >> 8
     arg2 = (code & 0xf << 4) >> 4
     arg3 = code & 0xf
-    reg[arg1] = reg[arg2] - reg[arg3]
+    reg[arg1] = tc_sub(reg[arg2], reg[arg3])
     pc += 1
 
 def op_jeqn(code: int):
@@ -525,16 +511,52 @@ for op in opcode2bin.keys():
     else:
         instructions[op] = op_unimp
 
-def tc_int2tc(val: int) -> int:
+def tc_int232b(val: int) -> int:
     if val < 0:
         val = -val
         val = (val ^ 0xffffffff) + 1
     return val
 
-def tc_add(val1: int, val2: int) -> int:
-    raise NotImplementedError
+def tc_int216b(val: int) -> int:
+    if val < 0:
+        val = -val
+        val = (val ^ 0xffff) + 1
+    return val
+
+def tc_32b2int(val: int) -> int:
+    if (val & 1 << 31) >> 31:
+        val = (val - 1) ^ 0xffffffff
+        val = -val
+    return val
 
 def tc_neg(val: int) -> int:
+    return val ^ (1 << 31)
+
+def tc_add(val1: int, val2: int) -> int:
+    return (val1 + val2) & 0xffffffff
+
+def tc_sub(val1: int, val2: int) -> int:
+    return (val1 - val2) & 0xffffffff
+
+def tc_16b232b(val: int) -> int:
+    if (val & (1 << 15)) >> 15:
+        val = val | 0xffff0000
+    return val
+
+def tc_mul(val1: int, val2: int) -> int:
+    if (val1 & (1 << 31)) >> 31:
+        val1 = val1 | 0xffffffff00000000
+    if (val2 & (1 << 31)) >> 31:
+        val2 = val2 | 0xffffffff00000000
+    return (val1 * val2) & 0xffffffff
+
+def tc_div(val1: int, val2: int) -> int:
+    sign = ((val1 & (1 << 31)) >> 31) ^ ((val2 & (1 << 31)) >> 31)
+    val1 = val1 & 0x7fffffff
+    val2 = val2 & 0x7fffffff
+    return (val1 // val2) | (sign << 31)
+
+def tc_mod(val1: int, val2: int) -> int:
     raise NotImplementedError
 
 # Returns True if s encodes an integer, and False otherwise.
