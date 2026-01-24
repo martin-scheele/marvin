@@ -601,6 +601,7 @@ def op_lshr(args: list[int]):
     reg[args[0]] = (reg[args[1]] >> reg[args[2]]) & 0xffffffff
     step_pc()
 
+# TODO: verify this
 def op_ashl(args: list[int]):
     global reg
     sign = reg[args[1]] & (1 << 31)
@@ -608,6 +609,7 @@ def op_ashl(args: list[int]):
     reg[args[0]] = 0 if temp == 0 else temp | sign
     step_pc()
 
+# TODO: have to sign extend, not just keep sign
 def op_ashr(args: list[int]):
     global reg
     sign = reg[args[1]] & (1 << 31)
