@@ -2,3 +2,4 @@ notes.md
 perf.data
 perf.data.old
 cprofile.data
+__pycache__/
