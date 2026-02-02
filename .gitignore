@@ -3,3 +3,9 @@ perf.data
 perf.data.old
 cprofile.data
 __pycache__/
+**/*.aux
+**/*.fdb_latexmk
+**/*.fls
+**/*.log
+**/*.out
+**/*.synctex.gz
