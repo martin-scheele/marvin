@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import argparse
 import builtins
 import datetime
@@ -260,6 +259,8 @@ WORD_SIZE  = 4
 SHORT_SIZE = 2
 BYTE_SIZE  = 1
 
+STACK_MAX = 65535
+
 def step_pc():
     global pc
     pc += WORD_SIZE
@@ -269,7 +270,7 @@ def simulate(machine_code: list[tuple[int, int, int, int]]):
     global reg, mem, ir, pc
 
     # Initialize the frame, stack, and global pointers
-    reg[reg_to_bin["fp"]] = reg[reg_to_bin["sp"]] = 65535
+    reg[reg_to_bin["fp"]] = reg[reg_to_bin["sp"]] = STACK_MAX
     reg[reg_to_bin["gp"]] = 8191
 
     # Load the machine code into memory starting at location 0.
@@ -353,7 +354,7 @@ def debug_exec():
         elif cmd == "p" or cmd == "print":
             if not args:
                 print_regs()
-                print_stack()
+                print_stack(STACK_MAX, tc_b32_to_int(reg[reg_to_bin["sp"]]))
                 continue
             if args[0] not in {"stack", "reg", "s", "r"}:
                 print(f"Invalid print object: {args[0]}")
@@ -361,13 +362,20 @@ def debug_exec():
             if args[0] in {"stack", "s"}:
                 # case 1: print entire stack
                 if len(args) == 1:
-                    print_stack()
+                    print_stack(STACK_MAX, tc_b32_to_int(reg[reg_to_bin["sp"]]))
                     continue
                 # case 2: print stack range
-                # TODO: parse input e.g. print stack <start> <stop>
+                # print stack <start> <stop>
                 if len(args) != 3:
                     print(f"Invalid syntax: {"TODO"}")
                     continue
+                if int(args[1]) > STACK_MAX or int(args[1]) < 0 \
+                    or int(args[2]) > STACK_MAX or int(args[2]) < 0 \
+                    or int(args[1]) > int(args[2]):
+                    print(f"Invalid stack values: {args[1]} {args[2]}")
+                    continue
+                print_stack(int(args[2]), int(args[1]))
+
             elif args[0] in {"reg", "r"}:
                 # case 1: print all regs
                 # print reg
@@ -398,10 +406,41 @@ def debug_exec():
                 elif args[2] in {"bin", "b"}:
                     print(format(reg[reg_to_bin[args[1]]], "032b"))
 
-        elif cmd == "q" or "quit":
+        elif cmd == "q" or cmd == "quit":
             global debug
             debug = False
             return
+        elif cmd == "h" or cmd == "help":
+            # TODO: de-indent this some other way
+            help_str = """
+List of commands:
+
+    help, h -- print this command
+        Usage: [h | help]
+
+    quit, q -- exit the debugger
+        Usage: [q | quit]
+
+    continue, c -- continue to next breakpoint
+        Usage: [c | continue]
+
+    step, s -- step to next instruction
+        Usage: [s | step]
+
+    break, b -- set a breakpoint
+        Usage: [b | break] <instruction>
+
+    delete, d -- delete a breakpoint
+        Usage: [d | delete] <instruction>
+
+    list, l -- list breakpoints
+        Usage: [l | list]
+
+    print, p -- print register or stack information
+        Usage: [p | print] [s | stack] [<start> <stop>]
+               [p | print] [r | reg] [<reg>] [<type>]
+            """
+            print(help_str)
         else:
             print(f"Invalid command: {cmd}")
     print()
@@ -414,8 +453,8 @@ def print_regs():
     print(f"rv:  [{format_reg(12) :>10}] fp:  [{format_reg(13) :>10}] sp:  [{format_reg(14) :>10}] gp:  [{format_reg(15) :>10}]")
     print()
 
-def print_stack():
-    for i in range(65535, tc_b32_to_int(reg[reg_to_bin["sp"]]) - 1, -4):
+def print_stack(hi: int, lo: int):
+    for i in range(hi, lo, -4):
         sym = ["*" if i == reg[reg_to_bin["fp"]] else " ", ">" if i == reg[reg_to_bin["sp"]] else " "]
         print(f"{"".join(sym)} {i:04x}: {" ".join(format(byte, "08b") for byte in mem[i - 3 : i + 1])}")
     print()
@@ -609,11 +648,13 @@ def op_ashl(args: list[int]):
     reg[args[0]] = 0 if temp == 0 else temp | sign
     step_pc()
 
-# TODO: have to sign extend, not just keep sign
+# TODO: verify this
 def op_ashr(args: list[int]):
     global reg
+    num_shifts = tc_b32_to_int(reg[args[2]])
     sign = reg[args[1]] & (1 << 31)
-    temp = ((reg[args[1]] ^ sign) >> reg[args[2]]) & 0xffffffff
+    sign_extend = int("1" * num_shifts, 2) if sign else 0
+    temp = ((reg[args[1]] ^ sign) >> reg[args[2]]) | (sign_extend << (31 - num_shifts))
     reg[args[0]] = 0 if temp == 0 else temp | sign
     step_pc()
 
