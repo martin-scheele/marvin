@@ -478,15 +478,7 @@ def print_stack(hi: int, lo: int):
     print()
 
 def format_reg(regbin: int) -> str:
-    match reg_curr_type[regbin]:
-        case builtins.int:
-            return f"{tc_b32_to_int(reg[regbin])}"
-        case builtins.float:
-            return f"{fp_f32_to_float(reg[regbin])}"
-        case builtins.str:
-            return f"{chr(reg[regbin])}"
-        case _:
-            return f"{format(regbin, "032b")}"
+    return f"{tc_b32_to_int(reg[regbin])}"
 
 # System Instructions
 
