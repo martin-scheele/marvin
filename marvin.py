@@ -123,8 +123,8 @@ def main():
     if not inFile.endswith(".marv") or not os.path.exists(inFile):
         sys.exit(f"Error: invalid file '{inFile}'")
 
-    tuples = validate_marv_labels(inFile)
-    machine_code = assemble_labels(tuples)
+    tuples = validate(inFile)
+    machine_code = assemble(tuples)
 
     if verbose:
         print_verbose_output()
@@ -135,7 +135,7 @@ def main():
 
 labels: dict[str, int] = {}
 
-def validate_marv_labels(inFile: str) -> list[tuple[str, *tuple[str, ...]]]:
+def validate(inFile: str) -> list[tuple[str, *tuple[str, ...]]]:
     with open(inFile, "r") as fh:
         lines = fh.readlines()
 
@@ -219,7 +219,7 @@ def valid_label(label: str) -> bool:
 
 # Assembles the instructions in tuples and returns a list containing the corresponding machine
 # codes. Prints the assembled instructions to stdout if verbose is True.
-def assemble_labels(tuples: list[tuple[str, *tuple[str, ...]]]) -> list[tuple[int, int, int, int]]:
+def assemble(tuples: list[tuple[str, *tuple[str, ...]]]) -> list[tuple[int, int, int, int]]:
     machine_code: list[tuple[int, int, int, int]] = []
 
     for id, t in enumerate(tuples):
