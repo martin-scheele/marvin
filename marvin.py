@@ -97,9 +97,6 @@ reg_to_bin = {
     "rv":  0b1100, "fp":  0b1101, "sp":  0b1110, "gp":  0b1111
 }
 
-# Maps registers to the current type of their contents.
-reg_curr_type: dict[int, builtins.type] = {reg_to_bin[reg]: builtins.int for reg in reg_to_bin.keys()}
-
 # Global argument variables.
 verbose = False
 verbose_output: list[str] = []
@@ -127,22 +124,22 @@ def main():
         sys.exit(f"Error: invalid file '{inFile}'")
 
     tuples = validate_marv_labels(inFile)
-    machineCodes = assemble_labels(tuples)
+    machine_code = assemble_labels(tuples)
 
     if verbose:
         print_verbose_output()
 
     # Simulate the machine codes.
-    if len(machineCodes) > 0:
-        simulate(machineCodes)
+    if len(machine_code) > 0:
+        simulate(machine_code)
 
 labels: dict[str, int] = {}
 
-def validate_marv_labels(inFile: str) -> list[tuple[int, str, *tuple[str, ...]]]:
+def validate_marv_labels(inFile: str) -> list[tuple[str, *tuple[str, ...]]]:
     with open(inFile, "r") as fh:
         lines = fh.readlines()
 
-    tuples: list[tuple[int, str, *tuple[str, ...]]] = []
+    tuples: list[tuple[str, *tuple[str, ...]]] = []
 
     instruction_number = 0
 
@@ -163,12 +160,10 @@ def validate_marv_labels(inFile: str) -> list[tuple[int, str, *tuple[str, ...]]]
         if ":" in line:
             if not line.endswith(":"):
                 sys.exit(f"Error {inFile}@{lineno}: invalid label {line}")
-            # TODO: maybe not this
             label = line[:-1]
             if label in labels.keys():
                 sys.exit(f"Error: {inFile}@{lineno}: duplicate label {label}")
             labels[label] = instruction_number
-            # TODO: need to verify that instruction_number exists, i.e. points to an instruction after it
             continue
 
         instruction_number += 1
@@ -194,29 +189,26 @@ def validate_marv_labels(inFile: str) -> list[tuple[int, str, *tuple[str, ...]]]
         # Validate the instruction arguments.
         opcode, args = toks[0], toks[1:]
         if len(args) != len(opcode_to_argmask[opcode]):
-            # TODO: more verbose error: e.g. def argmask_to_str for argument types
-            sys.exit(f"Error {inFile}@{lineno}: opcode expects {len(opcode_to_argmask[opcode])} arguments")
-        tuple_args: list[str] = []
+            argmask = opcode_to_argmask[opcode]
+            sys.exit(f"Error {inFile}@{lineno}: opcode expects {len(argmask)} arguments: '{argmask}'")
         for i, c in enumerate(opcode_to_argmask[opcode]):
             if c == "r":
                 if not valid_reg(args[i]):
                     sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[i]}'")
-                tuple_args.append(args[i])
             elif c == "n":
                 if not is_int(args[i]):
                     sys.exit(f"Error {inFile}@{lineno}: invalid number '{args[i]}'")
-                tuple_args.append(args[i])
             elif c == "f":
                 if not is_float(args[i]):
                     sys.exit(f"Error {inFile}@{lineno}: invalid number '{args[i]}'")
-                tuple_args.append(args[i])
             elif c == "l":
                 if not valid_label(args[i]):
                     sys.exit(f"Error {inFile}@{lineno}: invalid label '{args[i]}'")
-                tuple_args.append(args[i])
+                if labels[args[i]] >= instruction_number:
+                    sys.exit(f"Error {inFile}@{lineno}: missing instruction after label '{args[i]}'")
 
         # Append valid tuple.
-        tuples.append((lineno, opcode, *tuple_args))
+        tuples.append((opcode, *args))
 
     # TODO: confirm labels point to instruction
 
@@ -227,14 +219,13 @@ def valid_label(label: str) -> bool:
 
 # Assembles the instructions in tuples and returns a list containing the corresponding machine
 # codes. Prints the assembled instructions to stdout if verbose is True.
-def assemble_labels(tuples: list[tuple[int, str, *tuple[str, ...]]]) -> list[tuple[int, int, int, int]]:
+def assemble_labels(tuples: list[tuple[str, *tuple[str, ...]]]) -> list[tuple[int, int, int, int]]:
     machine_code: list[tuple[int, int, int, int]] = []
 
-    id = 0
-    for t in tuples:
-        opcode, args = t[1], t[2:]
+    for id, t in enumerate(tuples):
+        opcode, args = t[0], t[1:]
 
-        # TODO: do something that is not this...
+        # TODO: do something that is not this...?
         byte_list: list[int] = [opcode_to_bin[opcode], 0, 0, 0]
         curr_byte = 3
         nibble = 0
@@ -270,8 +261,8 @@ def assemble_labels(tuples: list[tuple[int, str, *tuple[str, ...]]]) -> list[tup
             binCode = f"{id: >5}: {" ".join([format(byte, "08b") for byte in byte_list])}"
             asmCode = f"{id: >5}: {opcode: <6} {" ".join(args)}"
             verbose_output.append(f"{binCode: <50} {asmCode}")
-        id += 1
 
+    # TODO: this is awkward - find a way to do it in one place
     if verbose or debug:
         for label in reversed(labels.keys()):
             verbose_output.insert(labels[label], f"\t{label + ":": >46}")
@@ -289,6 +280,7 @@ SHORT_SIZE = 2
 BYTE_SIZE  = 1
 
 STACK_MAX = 65535
+HEAP_START = 8192
 
 def step_pc():
     global pc
@@ -300,7 +292,7 @@ def simulate(machine_code: list[tuple[int, int, int, int]]):
 
     # Initialize the frame, stack, and global pointers
     reg[reg_to_bin["fp"]] = reg[reg_to_bin["sp"]] = STACK_MAX
-    reg[reg_to_bin["gp"]] = 8191
+    reg[reg_to_bin["gp"]] = HEAP_START
 
     # Load the machine code into memory starting at location 0.
     for i, v in enumerate(machine_code):
@@ -864,6 +856,7 @@ def op_storers(args: list[int]):
     mem[reg[args[1]] - 1] = (reg[args[0]] >> 8) & 0xff
     step_pc()
 
+# TODO: make explicit in documentation that loadn* loads from offset in bytes, not words
 def op_loadnw(args: list[int]):
     global reg
     addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))

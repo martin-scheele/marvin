@@ -1,11 +1,11 @@
 # Accepts n (int) from standard input and writes n! (computed recursively) to standard output.
 
-0     readi     r3            # read n
-1     pushrw    r3 sp         # mem[sp++] = n
-2     calln     ra 6          # n! = factorial(n)
-3     addi      sp -4         # sp = sp - 4
-4     writei    rv            # write n!
-5     halt                    # halt the machine
+    readi     r3            # read n
+    pushrw    r3 sp         # mem[sp++] = n
+    calln     ra factorial  # n! = factorial(n)
+    addi      sp -4         # sp = sp - 4
+    writei    rv            # write n!
+    halt                    # halt the machine
 
 # int factorial(int n):
 #   input : r3 = n
@@ -13,37 +13,40 @@
 #   temps: r4, r5
 
 # Save ra and fp, and set fp to sp.
-6     pushrw    ra sp         # mem[sp--] = ra
-7     pushrw    fp sp         # mem[sp--] = fp
-8     copy      fp sp         # fp = sp
+factorial:
+    pushrw    ra sp           # mem[sp--] = ra
+    pushrw    fp sp           # mem[sp--] = fp
+    copy      fp sp           # fp = sp
 
-# Save registers used.
-9     pushrw    r3 sp         # mem[sp--] = r3
-10    pushrw    r4 sp         # mem[sp--] = r4
-11    pushrw    r5 sp         # mem[sp--] = r5
+    # Save registers used.
+    pushrw    r3 sp           # mem[sp--] = r3
+    pushrw    r4 sp           # mem[sp--] = r4
+    pushrw    r5 sp           # mem[sp--] = r5
 
-12    loadnw    r3 fp 12      # n = mem[fp + 3]
-13    jnezn     r3 16         # if n != 0 jump to 16 (recursive step),
+    loadnw    r3 fp 12        # n = mem[fp + 3]
+    jnezn     r3 factorialRec # if n != 0 jump to 16 (recursive step),
                               # else fall through (base case)
 
-# Base case.
-14    seti      rv 1          # output = 1
-15    jumpn     22            # jump to 22
+    # Base case.
+    seti      rv 1            # output = 1
+    jumpn     restore         # jump to restore
 
 # Recursive step.
-16    copy      r5 r3         # r5 = n
-17    addi      r5 -1         # n = n - 1
-18    pushrw    r5 sp         # mem[sp--] = n - 1
-19    calln     ra 6          # (n-1)! = factorialRec(n-1)
-20    addi      sp 4          # sp = sp + 4
-21    mul       rv r3 rv      # n! = n(n-1)!
+factorialRec:
+    copy      r5 r3           # r5 = n
+    addi      r5 -1           # n = n - 1
+    pushrw    r5 sp           # mem[sp--] = n - 1
+    calln     ra factorial    # (n-1)! = factorialRec(n-1)
+    addi      sp 4            # sp = sp + 4
+    mul       rv r3 rv        # n! = n(n-1)!
 
-# Restore registers used.
-22    poprw     r5 sp         # r5 = mem[++sp]
-23    poprw     r4 sp         # r4 = mem[++sp]
-24    poprw     r3 sp         # r3 = mem[++sp]
+restore:
+    # Restore registers used.
+    poprw     r5 sp           # r5 = mem[++sp]
+    poprw     r4 sp           # r4 = mem[++sp]
+    poprw     r3 sp           # r3 = mem[++sp]
 
-# Restore fp and ra, and jump to ra (caller).
-25    poprw     fp sp         # fp = mem[++sp]
-26    poprw     ra sp         # ra = mem[++sp]
-27    jumpr     ra            # jump to caller
+    # Restore fp and ra, and jump to ra (caller).
+    poprw     fp sp           # fp = mem[++sp]
+    poprw     ra sp           # ra = mem[++sp]
+    jumpr     ra              # jump to caller
