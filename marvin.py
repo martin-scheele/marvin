@@ -62,9 +62,9 @@ opcode_to_argmask = {
     "and":    "rrr", "or":     "rrr", "xor":    "rrr", "not":    "rrr",
     "lshl":   "rr",  "lshr":   "rr",  "ashl":   "rr",  "ashr":   "rr",
     # jump instructions
-    "jumpn":  "n",   "jumpr":  "r",   "jeqzn":  "rn",  "jnezn":  "rn",
-    "jgen":   "rrn", "jlen":   "rrn", "jeqn":   "rrn", "jnen":   "rrn",
-    "jgtn":   "rrn", "jltn":   "rrn", "calln":  "rn",
+    "jumpn":  "l",   "jumpr":  "r",   "jeqzn":  "rl",  "jnezn":  "rl",
+    "jgen":   "rrl", "jlen":   "rrl", "jeqn":   "rrl", "jnen":   "rrl",
+    "jgtn":   "rrl", "jltn":   "rrl", "calln":  "rl",
     # register instructions
     "seti":   "rn",  "addi":   "rn",  "setf":   "rf",  "addf":   "rf",
     "copy":   "rr",
@@ -126,14 +126,9 @@ def main():
     if not inFile.endswith(".marv") or not os.path.exists(inFile):
         sys.exit(f"Error: invalid file '{inFile}'")
 
+    tuples = validate_marv_labels(inFile)
+    machineCodes = assemble_labels(tuples)
 
-    # Validate .marv and extract tokens.
-    tuples = validate_marv(inFile)
-
-    # Assemble the instructions into machine codes.
-    machineCodes = assemble(tuples)
-
-    # Print verbose output
     if verbose:
         print_verbose_output()
 
@@ -141,79 +136,103 @@ def main():
     if len(machineCodes) > 0:
         simulate(machineCodes)
 
-def validate_marv(inFile: str) -> list[tuple[int, int, str, *tuple[str, ...]]]:
+labels: dict[str, int] = {}
+
+def validate_marv_labels(inFile: str) -> list[tuple[int, str, *tuple[str, ...]]]:
     with open(inFile, "r") as fh:
         lines = fh.readlines()
 
-    expectedID = 0
-    tuples: list[tuple[int, int, str, *tuple[str, ...]]] = []
+    tuples: list[tuple[int, str, *tuple[str, ...]]] = []
 
+    instruction_number = 0
+
+    # Scan for label validation
     for i, line in enumerate(lines):
-        lineno = i + 1
         line = line.strip().lower()
-        # Ignore if line is empty or is a comment.
-        if line == "" or line.startswith("#"):
+        lineno = i + 1
+
+        # Skip empty lines and comments.
+        if not line or line.startswith("#"):
             continue
 
         # Remove inlined comment if any.
         if "#" in line:
             line = line[:line.find("#")].strip()
 
-        # Exit with error if number of tokens in line is less than 2, or if the instruction ID is
-        # invalid, or if the instruction is invalid.
+        # Find labels.
+        if ":" in line:
+            if not line.endswith(":"):
+                sys.exit(f"Error {inFile}@{lineno}: invalid label {line}")
+            # TODO: maybe not this
+            label = line[:-1]
+            if label in labels.keys():
+                sys.exit(f"Error: {inFile}@{lineno}: duplicate label {label}")
+            labels[label] = instruction_number
+            # TODO: need to verify that instruction_number exists, i.e. points to an instruction after it
+            continue
+
+        instruction_number += 1
+
+    for i, line in enumerate(lines):
+        line = line.strip().lower()
+        lineno = i + 1
+
+        # Skip empty lines, comments, and labels.
+        if not line or line.startswith("#") or line.endswith(":"):
+            continue
+
+        # Remove inlined comment if any.
+        if "#" in line:
+            line = line[:line.find("#")].strip()
+
         toks = line.split()
-        if len(toks) < 2:
-            sys.exit(f"Error {inFile}@{lineno}: not enough tokens")
-        if not is_int(toks[0]) or int(toks[0]) != expectedID:
-            sys.exit(f"Error {inFile}@{lineno}: invalid instruction ID '{toks[0]}'")
-        if toks[1] not in opcode_to_bin:
-            sys.exit(f"Error {inFile}@{lineno}: invalid instruction '{toks[1]}'")
-        expectedID += 1
+
+        # Exit with error if the instruction is invalid.
+        if toks[0] not in opcode_to_bin:
+            sys.exit(f"Error {inFile}@{lineno}: invalid instruction '{toks[0]}'")
 
         # Validate the instruction arguments.
-        id, opcode, args = int(toks[0]), toks[1], toks[2:]
+        opcode, args = toks[0], toks[1:]
         if len(args) != len(opcode_to_argmask[opcode]):
             # TODO: more verbose error: e.g. def argmask_to_str for argument types
             sys.exit(f"Error {inFile}@{lineno}: opcode expects {len(opcode_to_argmask[opcode])} arguments")
+        tuple_args: list[str] = []
         for i, c in enumerate(opcode_to_argmask[opcode]):
             if c == "r":
                 if not valid_reg(args[i]):
                     sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[i]}'")
+                tuple_args.append(args[i])
             elif c == "n":
                 if not is_int(args[i]):
                     sys.exit(f"Error {inFile}@{lineno}: invalid number '{args[i]}'")
+                tuple_args.append(args[i])
             elif c == "f":
                 if not is_float(args[i]):
                     sys.exit(f"Error {inFile}@{lineno}: invalid number '{args[i]}'")
+                tuple_args.append(args[i])
+            elif c == "l":
+                if not valid_label(args[i]):
+                    sys.exit(f"Error {inFile}@{lineno}: invalid label '{args[i]}'")
+                tuple_args.append(args[i])
 
         # Append valid tuple.
-        tuples.append((lineno, id, opcode, *toks[2:]))
+        tuples.append((lineno, opcode, *tuple_args))
 
-    # Additional validation of instruction arguments.
-    # TODO: setf, addf?
-    for t in tuples:
-        lineno, id, opcode, args = t[0], t[1], t[2], t[3:]
-        if opcode in {"jumpn"} and int(args[0]) >= len(tuples):
-            sys.exit(f"Error {inFile}@{lineno}: invalid instruction address '{args[0]}'")
-        elif opcode in {"addi", "seti"} and not valid_int(int(args[1])):
-            sys.exit(f"Error {inFile}@{lineno}: invalid number '{args[1]}'")
-        elif opcode in {"loadnb", "storenb", "loadns", "storens", "loadnw", "storenw"} and not valid_int(int(args[2])):
-            sys.exit(f"Error {inFile}@{lineno}: invalid address '{args[2]}'")
-        elif opcode in {"calln", "jeqzn", "jnezn"} and int(args[1]) >= len(tuples):
-            sys.exit(f"Error {inFile}@{lineno}: invalid instruction address '{args[1]}'")
-        elif opcode in {"jeqn", "jgen", "jgtn", "jlen", "jltn", "jnen"} and int(args[2]) >= len(tuples):
-            sys.exit(f"Error {inFile}@{lineno}: invalid instruction address '{args[2]}'")
+    # TODO: confirm labels point to instruction
 
     return tuples
 
+def valid_label(label: str) -> bool:
+    return label in labels.keys()
 
 # Assembles the instructions in tuples and returns a list containing the corresponding machine
 # codes. Prints the assembled instructions to stdout if verbose is True.
-def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]]) -> list[tuple[int, int, int, int]]:
+def assemble_labels(tuples: list[tuple[int, str, *tuple[str, ...]]]) -> list[tuple[int, int, int, int]]:
     machine_code: list[tuple[int, int, int, int]] = []
 
+    id = 0
     for t in tuples:
-        id, opcode, args = t[1], t[2], t[3:]
+        opcode, args = t[1], t[2:]
 
         # TODO: do something that is not this...
         byte_list: list[int] = [opcode_to_bin[opcode], 0, 0, 0]
@@ -236,6 +255,12 @@ def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]]) -> list[tuple
                 byte_list[curr_byte] = val & 0xff
                 byte_list[curr_byte - 1] = val >> 8
                 curr_byte -= 2
+            elif c == "l":
+                val = tc_int_to_b16(labels[args[i]])
+                byte_list[curr_byte] = val & 0xff
+                byte_list[curr_byte - 1] = val >> 8
+                curr_byte -= 2
+
             i -= 1
 
         code = (byte_list[0], byte_list[1], byte_list[2], byte_list[3])
@@ -245,9 +270,13 @@ def assemble(tuples: list[tuple[int, int, str, *tuple[str, ...]]]) -> list[tuple
             binCode = f"{id: >5}: {" ".join([format(byte, "08b") for byte in byte_list])}"
             asmCode = f"{id: >5}: {opcode: <6} {" ".join(args)}"
             verbose_output.append(f"{binCode: <50} {asmCode}")
+        id += 1
+
+    if verbose or debug:
+        for label in reversed(labels.keys()):
+            verbose_output.insert(labels[label], f"\t{label + ":": >46}")
 
     return machine_code
-
 
 # Global CPU variables.
 reg = [0] * 16      # registers
@@ -294,9 +323,6 @@ def simulate(machine_code: list[tuple[int, int, int, int]]):
 
         # Extract arguments from the instruction register.
         args = extract_args(ir, opcode_to_argmask[opcode])
-
-        # Track register type
-        # track_register_type(opcode, args)
 
         # Simulate the instruction for the opcode.
         instructions[opcode](args)
@@ -1014,7 +1040,7 @@ def extract_args(ir: int, mask: str) -> list[int]:
         if c == "r":
             ret.insert(0, ir & 0xf)
             ir >>= 4
-        elif c == "n" or c == "f":
+        elif c == "n" or c == "f" or c == "l":
             ret.insert(0, ir & 0xffff)
             ir >>= 16
     return ret

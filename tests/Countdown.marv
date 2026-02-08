@@ -1,9 +1,11 @@
 # Accepts n (int) from standard input and writes a countdown from n to 0 to standard output.
 
-0    readi    r0          # read n
-1    seti     r1 0        # zero = 0
-2    jltn     r0 r1 6     # if n < zero jump to 6
-3    writei   r0          # write n
-4    addi     r0 -1       # n = n - 1
-5    jumpn    2           # jump to 2
-6    halt                 # halt the machine
+    readi    r0          # read n
+    seti     r1 0        # zero = 0
+label:
+    jltn     r0 r1 halt  # if n < zero jump to 6
+    writei   r0          # write n
+    addi     r0 -1       # n = n - 1
+    jumpn    label       # jump to 2
+halt:
+    halt                 # halt the machine
