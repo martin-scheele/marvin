@@ -1,5 +1,4 @@
 import argparse
-import builtins
 import datetime
 import os
 import random
@@ -123,7 +122,7 @@ def main():
     if not inFile.endswith(".marv") or not os.path.exists(inFile):
         sys.exit(f"Error: invalid file '{inFile}'")
 
-    tuples = validate(inFile)
+    tuples = tokenize(inFile)
     machine_code = assemble(tuples)
 
     if verbose:
@@ -135,7 +134,7 @@ def main():
 
 labels: dict[str, int] = {}
 
-def validate(inFile: str) -> list[tuple[str, *tuple[str, ...]]]:
+def tokenize(inFile: str) -> list[tuple[str, *tuple[str, ...]]]:
     with open(inFile, "r") as fh:
         lines = fh.readlines()
 
@@ -210,12 +209,7 @@ def validate(inFile: str) -> list[tuple[str, *tuple[str, ...]]]:
         # Append valid tuple.
         tuples.append((opcode, *args))
 
-    # TODO: confirm labels point to instruction
-
     return tuples
-
-def valid_label(label: str) -> bool:
-    return label in labels.keys()
 
 # Assembles the instructions in tuples and returns a list containing the corresponding machine
 # codes. Prints the assembled instructions to stdout if verbose is True.
@@ -393,7 +387,6 @@ def debug_exec():
                     print(f"Invalid stack values: {args[1]} {args[2]}")
                     continue
                 print_stack(int(args[2]), int(args[1]))
-
             elif args[0] in {"reg", "r"}:
                 # case 1: print all regs
                 # print reg
@@ -423,7 +416,6 @@ def debug_exec():
                     print(chr(reg[reg_to_bin[args[1]]]))
                 elif args[2] in {"bin", "b"}:
                     print(format(reg[reg_to_bin[args[1]]], "032b"))
-
         elif cmd == "q" or cmd == "quit":
             global debug
             debug = False
@@ -434,29 +426,29 @@ def debug_exec():
 List of commands:
 
     help, h -- print this command
-        Usage: [h | help]
+        Usage: (h | help)
 
     quit, q -- exit the debugger
-        Usage: [q | quit]
+        Usage: (q | quit)
 
     continue, c -- continue to next breakpoint
-        Usage: [c | continue]
+        Usage: (c | continue)
 
     step, s -- step to next instruction
-        Usage: [s | step]
+        Usage: (s | step)
 
     break, b -- set a breakpoint
-        Usage: [b | break] <instruction>
+        Usage: (b | break) <instruction>
 
     delete, d -- delete a breakpoint
-        Usage: [d | delete] <instruction>
+        Usage: (d | delete) <instruction>
 
     list, l -- list breakpoints
-        Usage: [l | list]
+        Usage: (l | list)
 
     print, p -- print register or stack information
-        Usage: [p | print] [s | stack] [<start> <stop>]
-               [p | print] [r | reg] [<reg>] [<type>]
+        Usage: (p | print) [(s | stack) [<start> <stop> | <address>]]
+               (p | print) [(r | reg) [(<reg>) [<type>]]]
             """
             print(help_str)
         else:
@@ -1081,6 +1073,9 @@ def valid_int(n: int) -> bool:
 # Return True if s is "r" followed by a number from the interval [0, 15], and False otherwise.
 def valid_reg(s: str) -> bool:
     return s in reg_to_bin.keys()
+
+def valid_label(label: str) -> bool:
+    return label in labels.keys()
 
 def print_verbose_output():
     for s in verbose_output:
