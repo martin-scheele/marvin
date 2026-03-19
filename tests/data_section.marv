@@ -1,0 +1,16 @@
+.data
+    .int i = 69 
+    .char c = a
+    .float f = 42.0
+    .byte b = 30
+.text
+label:
+    loadaw r0 i
+    writei r0
+    loadas r0 c
+    writec r0
+    loadaw r0 f
+    writef r0
+    loadab r0 b
+    writei r0
+    halt

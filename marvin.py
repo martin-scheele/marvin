@@ -18,30 +18,31 @@ the emulator prints the assembled instructions to stdout before simulating them.
 # Maps opcodes to their binary 8-bit codes.
 opcode_to_bin = {
     # system instructions
-    "halt":   0b00000000, "readi":   0b00000001, "readf":   0b00000010, "readc":   0b00000011,
-    "writei": 0b00000100, "writef":  0b00000101, "writec":  0b00000110, "seed":    0b00000111,
-    "rand":   0b00001000, "time":    0b00001001, "date":    0b00001010, "nop":     0b00001111,
+    "halt":   0b00000000, "readi":   0b00000001, "readf":  0b00000010, "readc":   0b00000011,
+    "writei": 0b00000100, "writef":  0b00000101, "writec": 0b00000110, "seed":    0b00000111,
+    "rand":   0b00001000, "time":    0b00001001, "date":   0b00001010, "nop":     0b00001111,
     # arithmetic instructions
-    "add":    0b00010000, "sub":     0b00010001, "mul":     0b00010010, "div":     0b00010011,
-    "mod":    0b00010100, "neg":     0b00010101, "fadd":    0b00010110, "fsub":    0b00010111,
-    "fmul":   0b00011000, "fdiv":    0b00011001, "fneg":    0b00011010,
+    "add":    0b00010000, "sub":     0b00010001, "mul":    0b00010010, "div":     0b00010011,
+    "mod":    0b00010100, "neg":     0b00010101, "fadd":   0b00010110, "fsub":    0b00010111,
+    "fmul":   0b00011000, "fdiv":    0b00011001, "fneg":   0b00011010,
     # bitwise instructions
-    "and":    0b00100000, "or":      0b00100001, "xor":     0b00100010, "not":     0b00100011,
-    "lshl":   0b00100100, "lshr":    0b00100101, "ashl":    0b00100110, "ashr":    0b00100111,
+    "and":    0b00100000, "or":      0b00100001, "xor":    0b00100010, "not":     0b00100011,
+    "lshl":   0b00100100, "lshr":    0b00100101, "ashl":   0b00100110, "ashr":    0b00100111,
     # jump instructions
-    "jumpn":  0b00110000, "jumpr":   0b00110001, "jeqzn":   0b00110010, "jnezn":   0b00110011,
-    "jgen":   0b00110100, "jlen":    0b00110101, "jeqn":    0b00110110, "jnen":    0b00110111,
-    "jgtn":   0b00111000, "jltn":    0b00111001, "calln":   0b00111010,
+    "jumpn":  0b00110000, "jumpr":   0b00110001, "jeqzn":  0b00110010, "jnezn":   0b00110011,
+    "jgen":   0b00110100, "jlen":    0b00110101, "jeqn":   0b00110110, "jnen":    0b00110111,
+    "jgtn":   0b00111000, "jltn":    0b00111001, "calln":  0b00111010,
     # register instructions
-    "seti":   0b01000000, "addi":    0b01000001, "setf":    0b01000010, "addf":    0b01000011,
+    "seti":   0b01000000, "addi":    0b01000001, "setf":   0b01000010, "addf":    0b01000011,
     "copy":   0b01000100,
     # stack insructions
-    "pushrb": 0b01010000, "poprb":   0b01010001, "pushrs":  0b01010010, "poprs":   0b01010011,
+    "pushrb": 0b01010000, "poprb":   0b01010001, "pushrs": 0b01010010, "poprs":   0b01010011,
     "pushrw": 0b01010100, "poprw":   0b01010101,
     # load/store instructions
-    "loadnb": 0b01100000, "storenb": 0b01100001, "loadrb":  0b01100010, "storerb": 0b01100011,
-    "loadns": 0b01100100, "storens": 0b01100101, "loadrs":  0b01100110, "storers": 0b01100111,
-    "loadnw": 0b01101000, "storenw": 0b01101001, "loadrw":  0b01101010, "storerw": 0b01101011,
+    "loadnb": 0b01100000, "storenb": 0b01100001, "loadrb": 0b01100010, "storerb": 0b01100011,
+    "loadns": 0b01100100, "storens": 0b01100101, "loadrs": 0b01100110, "storers": 0b01100111,
+    "loadnw": 0b01101000, "storenw": 0b01101001, "loadrw": 0b01101010, "storerw": 0b01101011,
+    "loadab": 0b01101100, "loadas" : 0b01101101, "loadaw": 0b01101110
 }
 
 # Maps 8-bit binary codes to the opcodes they represent.
@@ -74,6 +75,7 @@ opcode_to_argmask = {
     "loadnb": "rrn", "storenb": "rrn", "loadrb": "rr", "storerb": "rr",
     "loadns": "rrn", "storens": "rrn", "loadrs": "rr", "storers": "rr",
     "loadnw": "rrn", "storenw": "rrn", "loadrw": "rr", "storerw": "rr",
+    "loadab": "ra",  "loadas": "ra", "loadaw": "ra",
 }
 
 # Maps opcodes to their costs.
@@ -102,7 +104,8 @@ verbose_output: list[str] = []
 debug = False
 count_calls = False
 
-# determine getch function
+labels: dict[str, int] = {}
+data_ids: dict[str, tuple[str, int, int]] = {}
 
 def main():
     # Process command-line inputs and exit if they are not as expected.
@@ -125,6 +128,10 @@ def main():
     tuples = tokenize(inFile)
     machine_code = assemble(tuples)
 
+    print(tuples)
+    print(data_ids)
+    print(machine_code)
+
     if verbose:
         print_verbose_output()
 
@@ -132,13 +139,19 @@ def main():
     if len(machine_code) > 0:
         simulate(machine_code)
 
-labels: dict[str, int] = {}
-
 def tokenize(inFile: str) -> list[tuple[str, *tuple[str, ...]]]:
     with open(inFile, "r") as fh:
         lines = fh.readlines()
 
     tuples: list[tuple[str, *tuple[str, ...]]] = []
+
+    data_start = 0
+    data_end = 0
+    data_found = False
+
+    text_start = 0
+    text_end = 0
+    text_found = False
 
     instruction_number = 0
 
@@ -155,6 +168,29 @@ def tokenize(inFile: str) -> list[tuple[str, *tuple[str, ...]]]:
         if "#" in line:
             line = line[:line.find("#")].strip()
 
+        # Find start and end of text and data sections.
+        if line.startswith("."):
+            toks = line.split()
+            section = toks[0]
+            if section == ".data":
+                if text_found:
+                    text_end = i
+                if data_found:
+                    sys.exit(f"Error {inFile}@{lineno}: duplicate data section {line}")
+                data_found = True
+                data_start = i + 1
+
+            elif section == ".text":
+                if data_found:
+                    data_end = i
+                if text_found:
+                    sys.exit(f"Error {inFile}@{lineno}: duplicate text section {line}")
+                text_found = True
+                text_start = i + 1
+            elif section not in [".byte", ".short", ".int", ".float", ".char", ".string"]:
+                # TODO: handle types here?
+                sys.exit(f"Error {inFile}@{lineno}: invalid section {line}")
+
         # Find labels.
         if ":" in line:
             if not line.endswith(":"):
@@ -162,14 +198,77 @@ def tokenize(inFile: str) -> list[tuple[str, *tuple[str, ...]]]:
             label = line[:-1]
             if label in labels.keys():
                 sys.exit(f"Error: {inFile}@{lineno}: duplicate label {label}")
-            labels[label] = instruction_number
+            labels[label] = instruction_number - text_start
             continue
 
         instruction_number += 1
 
-    for i, line in enumerate(lines):
+    if not text_start:
+        # TODO: is this descriptive enough?
+        sys.exit(f"Error {inFile}: missing text section")
+
+    if not text_end:
+        # TODO: -1 necessary?
+        text_end = len(lines)
+
+    if data_start and not data_end:
+        # TODO: -1 necessary?
+        data_end = len(lines)
+
+    data_offset = 0
+
+    # Validate data section.
+    for line in lines[data_start:data_end]:
         line = line.strip().lower()
-        lineno = i + 1
+        lineno = data_start + 1
+
+        # Skip empty lines, comments, and labels.
+        if not line or line.startswith("#") or line.endswith(":"):
+            continue
+
+        # Remove inlined comment if any.
+        if "#" in line:
+            line = line[:line.find("#")].strip()
+
+        toks = line.split()
+
+        if len(toks) != 4:
+            sys.exit(f"Error {inFile}@{lineno}: invalid number of tokens '{toks[0]}'")
+
+        if toks[0] not in [".byte", ".short", ".int", ".float", ".char", ".string"]:
+            sys.exit(f"Error {inFile}@{lineno}: invalid type directive '{toks[0]}'")
+
+        if toks[1] in data_ids.keys():
+            sys.exit(f"Error {inFile}@{lineno}: duplicate variable indentifier '{toks[1]}'")
+
+        if toks[2] != "=":
+            sys.exit(f"Error {inFile}@{lineno}: invalid assignment operator '{toks[2]}'")
+
+        if toks[0] in [".byte", ".short", ".int"]:
+            if is_int(toks[3]):
+                data_ids[toks[1]] = (toks[0], tc_int_to_b32(int(toks[3])), data_offset)
+                # TODO: change this for varying width types
+                data_offset += 4
+        elif toks[0] == ".float":
+            if is_float(toks[3]):
+                data_ids[toks[1]] = (toks[0], fp_float_to_f32(float(toks[3])), data_offset)
+                data_offset += 4
+        elif toks[0] == ".char":
+            # TODO: require quotes?
+            byte_list = list(toks[3].encode("utf-16-be"))
+            ch = byte_list[0] << 8 | byte_list[1]
+            if len(byte_list) != 2:
+                sys.exit(f"Error {inFile}@{lineno}: invalid unicode character '{toks[3]}'")
+            data_ids[toks[1]] = (toks[0], ch, data_offset)
+            data_offset += 2
+        elif toks[0] == ".string":
+            # TODO: implement strings
+            sys.exit(f"Error {inFile}@{lineno}: unimplemented type '{toks[0]}'")
+
+    # Validate text section.
+    for line in lines[text_start:text_end]:
+        line = line.strip().lower()
+        lineno = text_start + 1
 
         # Skip empty lines, comments, and labels.
         if not line or line.startswith("#") or line.endswith(":"):
@@ -191,6 +290,7 @@ def tokenize(inFile: str) -> list[tuple[str, *tuple[str, ...]]]:
             argmask = opcode_to_argmask[opcode]
             sys.exit(f"Error {inFile}@{lineno}: opcode expects {len(argmask)} arguments: '{argmask}'")
         for i, c in enumerate(opcode_to_argmask[opcode]):
+            # TODO: do we need a 'c' case for chars? how to handle strings?
             if c == "r":
                 if not valid_reg(args[i]):
                     sys.exit(f"Error {inFile}@{lineno}: invalid register '{args[i]}'")
@@ -205,6 +305,10 @@ def tokenize(inFile: str) -> list[tuple[str, *tuple[str, ...]]]:
                     sys.exit(f"Error {inFile}@{lineno}: invalid label '{args[i]}'")
                 if labels[args[i]] >= instruction_number:
                     sys.exit(f"Error {inFile}@{lineno}: missing instruction after label '{args[i]}'")
+            elif c == "a":
+                if not valid_variable(args[i]):
+                    sys.exit(f"Error {inFile}@{lineno}: invalid variable '{args[i]}'")
+
 
         # Append valid tuple.
         tuples.append((opcode, *args))
@@ -231,7 +335,10 @@ def assemble(tuples: list[tuple[str, *tuple[str, ...]]]) -> list[tuple[int, int,
                 if nibble == 0:
                     curr_byte -= 1
             elif c == "n":
-                val = tc_int_to_b16(int(args[i]))
+                if valid_variable(args[i]):
+                    val = tc_int_to_b16(data_ids[args[i]][2])
+                else:
+                    val = tc_int_to_b16(int(args[i]))
                 byte_list[curr_byte] = val & 0xff
                 byte_list[curr_byte - 1] = val >> 8
                 curr_byte -= 2
@@ -242,6 +349,11 @@ def assemble(tuples: list[tuple[str, *tuple[str, ...]]]) -> list[tuple[int, int,
                 curr_byte -= 2
             elif c == "l":
                 val = tc_int_to_b16(labels[args[i]])
+                byte_list[curr_byte] = val & 0xff
+                byte_list[curr_byte - 1] = val >> 8
+                curr_byte -= 2
+            elif c == "a":
+                val = tc_int_to_b16(DATA_START + data_ids[args[i]][2])
                 byte_list[curr_byte] = val & 0xff
                 byte_list[curr_byte - 1] = val >> 8
                 curr_byte -= 2
@@ -257,9 +369,10 @@ def assemble(tuples: list[tuple[str, *tuple[str, ...]]]) -> list[tuple[int, int,
             verbose_output.append(f"{binCode: <50} {asmCode}")
 
     # TODO: this is awkward - find a way to do it in one place
-    if verbose or debug:
-        for label in reversed(labels.keys()):
-            verbose_output.insert(labels[label], f"\t{label + ":": >46}")
+    # if verbose or debug:
+    #     for label in reversed(labels.keys()):
+    #         # TODO: output is too wide
+    #         verbose_output[labels[label]] = f"\t{label + ":": >42} {verbose_output[labels[label]]}"
 
     return machine_code
 
@@ -275,6 +388,7 @@ BYTE_SIZE  = 1
 
 STACK_MAX = 65535
 HEAP_START = 8192
+DATA_START = HEAP_START
 
 def step_pc():
     global pc
@@ -284,14 +398,32 @@ def step_pc():
 def simulate(machine_code: list[tuple[int, int, int, int]]):
     global reg, mem, ir, pc
 
-    # Initialize the frame, stack, and global pointers
-    reg[reg_to_bin["fp"]] = reg[reg_to_bin["sp"]] = STACK_MAX
-    reg[reg_to_bin["gp"]] = HEAP_START
-
     # Load the machine code into memory starting at location 0.
     for i, v in enumerate(machine_code):
         for b in range(4):
             mem[i * 4 + b] = v[b]
+
+    heap_offset = 0
+    for data_type, data_val, data_offset in data_ids.values():
+        if data_type in [".byte"]:
+            mem[DATA_START + data_offset] = data_val & 0xff
+            heap_offset += 1
+        elif data_type in [".short", ".char"]:
+            mem[DATA_START + data_offset + 0] = (data_val >> 8) & 0xff
+            mem[DATA_START + data_offset + 1] = data_val & 0xff
+            heap_offset += 2
+        elif data_type in [".int", ".float"]:
+            mem[DATA_START + data_offset + 0] = data_val >> 24
+            mem[DATA_START + data_offset + 1] = (data_val >> 16) & 0xff
+            mem[DATA_START + data_offset + 2] = (data_val >> 8) & 0xff
+            mem[DATA_START + data_offset + 3] = data_val & 0xff
+            heap_offset += 4
+        elif data_type in [".string"]:
+            pass
+
+    # Initialize the frame, stack, and global pointers
+    reg[reg_to_bin["fp"]] = reg[reg_to_bin["sp"]] = STACK_MAX
+    reg[reg_to_bin["gp"]] = DATA_START + heap_offset
 
     while True:
         # Fetch the next instruction to simulate.
@@ -368,7 +500,7 @@ def debug_exec():
                 print_regs()
                 print_stack(STACK_MAX, tc_b32_to_int(reg[reg_to_bin["sp"]]))
                 continue
-            if args[0] not in {"stack", "reg", "s", "r"}:
+            if args[0] not in {"stack", "reg", "mem", "s", "r", "m"}:
                 print(f"Invalid print object: {args[0]}")
                 continue
             if args[0] in {"stack", "s"}:
@@ -416,6 +548,16 @@ def debug_exec():
                     print(chr(reg[reg_to_bin[args[1]]]))
                 elif args[2] in {"bin", "b"}:
                     print(format(reg[reg_to_bin[args[1]]], "032b"))
+            elif args[0] in {"mem", "m"}:
+                # TODO: make more robust
+                if len(args) == 2:
+                    print(format(mem[int(args[1])], "08b"))
+                    continue
+                if len(args) == 3:
+                    for i in range(int(args[1]) , int(args[2]) + 1, 4):
+                        print(f"{i:04x}: {" ".join(format(byte, "08b") for byte in mem[i : i + 4])}")
+                    continue
+
         elif cmd == "q" or cmd == "quit":
             global debug
             debug = False
@@ -464,6 +606,7 @@ def print_regs():
     print()
 
 def print_stack(hi: int, lo: int):
+    # TODO: bounds checking
     for i in range(hi, lo, -4):
         sym = ["*" if i == reg[reg_to_bin["fp"]] else " ", ">" if i == reg[reg_to_bin["sp"]] else " "]
         print(f"{"".join(sym)} {i:04x}: {" ".join(format(byte, "08b") for byte in mem[i - 3 : i + 1])}")
@@ -507,7 +650,8 @@ def op_readf(args: list[int]):
 
 def op_readc(args: list[int]):
     global reg
-    reg[args[0]] = ord(getch())
+    byte_list = list(str(getch()).encode("utf-16-be"))
+    reg[args[0]] = byte_list[0] << 8 | byte_list[1]
     step_pc()
 
 def op_writei(args: list[int]):
@@ -520,7 +664,7 @@ def op_writef(args: list[int]):
 
 def op_writec(args: list[int]):
     # TODO: how to handle value outside of range? clamp?
-    print(chr(reg[args[0]]))
+    print(reg[args[0]].to_bytes(2, 'big').decode("utf-16-be"))
     step_pc()
 
 def op_seed(args: list[int]):
@@ -790,6 +934,8 @@ def op_poprw(args: list[int]):
 
 # Load/store instructions
 
+# TODO: add 0xff mask to left shifted bytes?
+
 def op_loadnb(args: list[int]):
     global reg
     addr = tc_add(reg[args[1]], tc_b16_to_b32(args[2]))
@@ -869,6 +1015,25 @@ def op_storerw(args: list[int]):
     mem[reg[args[1]] - 1] = (reg[args[0]] >> 8) & 0xff
     mem[reg[args[1]] - 2] = (reg[args[0]] >> 16) & 0xff
     mem[reg[args[1]] - 3] = (reg[args[0]] >> 24) & 0xff
+    step_pc()
+
+def op_loadab(args: list[int]):
+    global mem
+    byte = mem[args[1]]
+    reg[args[0]] = byte
+    step_pc()
+
+def op_loadas(args: list[int]):
+    global mem
+    short = mem[args[1] : args[1] + SHORT_SIZE]
+    reg[args[0]] =  short[0] << 8 | short[1]
+    step_pc()
+
+# TODO: should this read memory upwards or downwards?
+def op_loadaw(args:list[int]):
+    global mem
+    word = mem[args[1] : args[1] + WORD_SIZE]
+    reg[args[0]] = word[0] << 24 | word[1] << 16 | word[2] << 8 | word[3]
     step_pc()
 
 # TODO: how to handle accidentally reading uninitialized memory
@@ -1017,7 +1182,7 @@ def extract_args(ir: int, mask: str) -> list[int]:
         if c == "r":
             ret.insert(0, ir & 0xf)
             ir >>= 4
-        elif c == "n" or c == "f" or c == "l":
+        elif c == "n" or c == "f" or c == "l" or c == "a":
             ret.insert(0, ir & 0xffff)
             ir >>= 16
     return ret
@@ -1048,6 +1213,7 @@ def find_getch():
 
     return _getch
 
+# determine getch function
 getch = find_getch()
 
 # Returns True if s encodes an integer, and False otherwise.
@@ -1076,6 +1242,9 @@ def valid_reg(s: str) -> bool:
 
 def valid_label(label: str) -> bool:
     return label in labels.keys()
+
+def valid_variable(variable: str) -> bool:
+    return variable in data_ids.keys()
 
 def print_verbose_output():
     for s in verbose_output:
