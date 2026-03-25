@@ -116,12 +116,8 @@ def main():
     if not inFile.endswith(".marv") or not os.path.exists(inFile):
         sys.exit(f"Error: invalid file '{inFile}'")
 
-    # TODO: just do this in parser
-    with open(inFile, "r") as fh:
-        lines = fh.readlines()
-
     # TODO: ParsingError exception class instead of prints
-    parser = Parser(inFile, lines)
+    parser = Parser(inFile)
     program = parser.parse()
 
     if not program.machine_code:
@@ -201,12 +197,12 @@ class CPU:
             except IndexError:
                 sys.exit(f"Error: attempted to execute instruction {self.pc // WORD_SIZE}; halting the machine")
 
-            if self.debug: 
-                self.debug_exec()
+            self.debug_exec()
 
             opcode = bin_to_opcode[self.ir >> 24]
             args = extract_args(self.ir, opcode_to_argmask[opcode])
 
+            # TODO: implement default case
             op_fn = getattr(self, f"op_{opcode}")
             op_fn(args)
 
@@ -215,7 +211,8 @@ class CPU:
                 # TODO: actually delay and visualize
 
     def debug_exec(self):
-        # Check for breakpoints.
+        if not self.debug:
+            return
         if self.pc // 4 in self.breakpoints:
             pass
         elif self.continue_debug:
@@ -322,32 +319,32 @@ class CPU:
             elif cmd == "h" or cmd == "help":
                 # TODO: de-indent this some other way
                 help_str = """
-    List of commands:
+List of commands:
 
-        help, h -- print this command
-            Usage: (h | help)
+    help, h -- print this command
+        Usage: (h | help)
 
-        quit, q -- exit the debugger
-            Usage: (q | quit)
+    quit, q -- exit the debugger
+        Usage: (q | quit)
 
-        continue, c -- continue to next breakpoint
-            Usage: (c | continue)
+    continue, c -- continue to next breakpoint
+        Usage: (c | continue)
 
-        step, s -- step to next instruction
-            Usage: (s | step)
+    step, s -- step to next instruction
+        Usage: (s | step)
 
-        break, b -- set a breakpoint
-            Usage: (b | break) <instruction>
+    break, b -- set a breakpoint
+        Usage: (b | break) <instruction>
 
-        delete, d -- delete a breakpoint
-            Usage: (d | delete) <instruction>
+    delete, d -- delete a breakpoint
+        Usage: (d | delete) <instruction>
 
-        list, l -- list breakpoints
-            Usage: (l | list)
+    list, l -- list breakpoints
+        Usage: (l | list)
 
-        print, p -- print register or stack information
-            Usage: (p | print) [(s | stack) [<start> <stop> | <address>]]
-                (p | print) [(r | reg) [(<reg>) [<type>]]]
+    print, p -- print register or stack information
+        Usage: (p | print) [(s | stack) [<start> <stop> | <address>]]
+            (p | print) [(r | reg) [(<reg>) [<type>]]]
                 """
                 print(help_str)
             else:
@@ -765,9 +762,11 @@ class CPU:
 
 
 class Parser:
-    def __init__(self, inFile: str, lines: list[str]):
+    def __init__(self, inFile: str):
         self.inFile: str = inFile
-        self.lines: list[str] = lines
+        # TODO: is this an ok way to do this?
+        with open(inFile, "r") as fh:
+            self.lines: list[str] = fh.readlines()
         # TODO: how will this work? we need to show labels and actual lines
         self.pc_to_line: dict[int, str]
         self.machine_code: list[tuple[int, int, int, int]] = []
