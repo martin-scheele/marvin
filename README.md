@@ -4,7 +4,7 @@ Marvin is a hypothetical computer with sixteen 32-bit registers and 16K 32-bit w
 addition to the sixteen registers, Marvin has a program counter `pc` and an instruction register `ir`. A 
 Marvin program (ie, a `.marv` file) is assembled and loaded into memory starting at location 0. Marvin supports 65 
 instructions, each of which accepts between 0 and 3 arguments (aka inputs). See 
-[Marvin Machine Specification](https://www.cs.umb.edu/~siyer/teaching/marvinspec.pdf) for more details about the 
+[Marvin Machine Specification](https://github.com/martin-scheele/marvin/blob/main/docs/tex/marvinspec.pdf) for more details about the 
 machine, including its instruction set. 
 
 The program `marvin.py` is an emulator for the Marvin machine. Here is the usage string for the emulator:
