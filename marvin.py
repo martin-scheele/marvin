@@ -76,7 +76,7 @@ opcode_to_argmask = {
     "loadnb": "rrn", "storenb": "rrn", "loadrb": "rr", "storerb": "rr",
     "loadns": "rrn", "storens": "rrn", "loadrs": "rr", "storers": "rr",
     "loadnw": "rrn", "storenw": "rrn", "loadrw": "rr", "storerw": "rr",
-    "loadab": "ra",  "loadas": "ra", "loadaw": "ra",
+    "loadab": "ra",  "loadas":  "ra",  "loadaw": "ra",
 }
 
 # Maps register names to their binary 4-bit codes.
@@ -212,9 +212,9 @@ class CPU:
             op_fn = getattr(self, f"op_{opcode}")
             op_fn(args)
 
+            # TODO: actually delay and visualize
             if self.count_calls:
                 opcode_to_calls[opcode] += 1
-                # TODO: actually delay and visualize
 
     def debug_exec(self):
         if not self.debug:
@@ -350,7 +350,8 @@ List of commands:
 
     print, p -- print register or stack information
         Usage: (p | print) [(s | stack) [<start> <stop> | <address>]]
-            (p | print) [(r | reg) [(<reg>) [<type>]]]
+               (p | print) [(r | reg) [(<reg>) [<type>]]]
+               (p | print) [(p | program)]
                 """
                 print(help_str)
             else:
