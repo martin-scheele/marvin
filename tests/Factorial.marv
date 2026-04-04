@@ -1,5 +1,5 @@
 # Accepts n (int) from standard input and writes n! (computed recursively) to standard output.
-
+.text
     readi     r3            # read n
     pushrw    r3 sp         # mem[sp++] = n
     calln     ra factorial  # n! = factorial(n)
