@@ -132,6 +132,8 @@ class Program:
     lines: list[str]
     labels: dict[str, int]
     data_ids: dict[str, tuple[str, int, int]]
+    pc_to_abs_line: dict[int, int]
+    abs_to_pc_line: dict[int, int]
 
 WORD_SIZE  = 4
 SHORT_SIZE = 2
@@ -185,6 +187,12 @@ class CPU:
         self.reg[reg_to_bin["fp"]] = self.reg[reg_to_bin["sp"]] = STACK_MAX
         self.reg[reg_to_bin["gp"]] = DATA_START + heap_offset
 
+        if self.verbose:
+            for i, line in enumerate(self.program.lines):
+                if (pc := self.program.abs_to_pc_line.get(i, -1)) != -1:
+                    print(f"{pc} ", end="")
+                print(line)
+
     def run(self):
         while True:
             try:
@@ -221,6 +229,7 @@ class CPU:
         # TODO: reimplement verbose output printing
         # Print current instruction; register and stack contents
         # print(verbose_output[pc // 4], end="\n\n")
+        print(self.program.lines[self.program.pc_to_abs_line[self.pc // 4]])
 
         # Get debug input.
         while cmd := input("> "):
@@ -764,11 +773,11 @@ List of commands:
 class Parser:
     def __init__(self, inFile: str):
         self.inFile: str = inFile
-        # TODO: is this an ok way to do this?
-        with open(inFile, "r") as fh:
-            self.lines: list[str] = fh.readlines()
-        # TODO: how will this work? we need to show labels and actual lines
-        self.pc_to_line: dict[int, str]
+
+        self.lines: list[str] = []
+        self.pc_to_abs_line: dict[int, int] = {}
+        self.abs_to_pc_line: dict[int, int] = {}
+
         self.machine_code: list[tuple[int, int, int, int]] = []
         self.labels: dict[str, int] = {}
         self.data_ids: dict[str, tuple[str, int, int]] = {}
@@ -776,8 +785,7 @@ class Parser:
     def parse(self) -> Program:
         tokens = self._tokenize()
         self._assemble(tokens)
-        # TODO: pass pc_to_line dict
-        return Program(self.machine_code, self.lines, self.labels, self.data_ids)
+        return Program(self.machine_code, self.lines, self.labels, self.data_ids, self.pc_to_abs_line, self.abs_to_pc_line)
 
     def _tokenize(self) -> list[tuple[str, *tuple[str, ...]]]:
         tuples: list[tuple[str, *tuple[str, ...]]] = []
@@ -792,8 +800,11 @@ class Parser:
 
         instruction_number = 0
 
-        # Scan for label validation
-        for i, line in enumerate(self.lines):
+        with open(self.inFile, "r") as fh:
+            lines: list[str] = fh.readlines()
+
+        # Scan for label validation and section bounds.
+        for i, line in enumerate(lines):
             line = line.strip().lower()
             lineno = i + 1
 
@@ -835,7 +846,7 @@ class Parser:
                 label = line[:-1]
                 if label in self.labels.keys():
                     sys.exit(f"Error: {self.inFile}@{lineno}: duplicate label {label}")
-                self.labels[label] = instruction_number - text_start
+                self.labels[label] = instruction_number - 1
                 continue
 
             instruction_number += 1
@@ -846,16 +857,16 @@ class Parser:
 
         if not text_end:
             # TODO: -1 necessary?
-            text_end = len(self.lines)
+            text_end = len(lines)
 
         if data_start and not data_end:
             # TODO: -1 necessary?
-            data_end = len(self.lines)
+            data_end = len(lines)
 
         data_offset = 0
 
         # Validate data section.
-        for line in self.lines[data_start:data_end]:
+        for line in lines[data_start:data_end]:
             line = line.strip().lower()
             lineno = data_start + 1
 
@@ -902,13 +913,21 @@ class Parser:
                 # TODO: implement strings
                 sys.exit(f"Error {self.inFile}@{lineno}: unimplemented type '{toks[0]}'")
 
+        pc_line = 0
+        abs_line = 0
+
         # Validate text section.
-        for line in self.lines[text_start:text_end]:
+        for line in lines[text_start:text_end]:
             line = line.strip().lower()
             lineno = text_start + 1
 
             # Skip empty lines, comments, and self.labels.
-            if not line or line.startswith("#") or line.endswith(":"):
+            if not line or line.startswith("#"):
+                continue
+
+            if line.endswith(":"):
+                self.lines.append(line)
+                abs_line += 1
                 continue
 
             # Remove inlined comment if any.
@@ -949,6 +968,11 @@ class Parser:
 
             # Append valid tuple.
             tuples.append((opcode, *args))
+            self.lines.append(line)
+            self.pc_to_abs_line[pc_line] = abs_line
+            self.abs_to_pc_line[abs_line] = pc_line
+            pc_line += 1
+            abs_line += 1
 
         return tuples
 
