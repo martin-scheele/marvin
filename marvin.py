@@ -188,10 +188,8 @@ class CPU:
         self.reg[reg_to_bin["gp"]] = DATA_START + heap_offset
 
         if self.verbose:
-            for i, line in enumerate(self.program.lines):
-                if (pc := self.program.abs_to_pc_line.get(i, -1)) != -1:
-                    print(f"{pc} ", end="")
-                print(line)
+            self.print_program()
+
 
     def run(self):
         while True:
@@ -226,9 +224,6 @@ class CPU:
         elif self.continue_debug:
             return
 
-        # TODO: reimplement verbose output printing
-        # Print current instruction; register and stack contents
-        # print(verbose_output[pc // 4], end="\n\n")
         print(self.program.lines[self.program.pc_to_abs_line[self.pc // 4]])
 
         # Get debug input.
@@ -264,7 +259,7 @@ class CPU:
                     self.print_regs()
                     self.print_stack(STACK_MAX, tc_b32_to_int(self.reg[reg_to_bin["sp"]]))
                     continue
-                if args[0] not in {"stack", "reg", "mem", "s", "r", "m"}:
+                if args[0] not in {"stack", "reg", "mem", "program", "s", "r", "m", "p"}:
                     print(f"Invalid print object: {args[0]}")
                     continue
                 if args[0] in {"stack", "s"}:
@@ -321,6 +316,8 @@ class CPU:
                         for i in range(int(args[1]) , int(args[2]) + 1, 4):
                             print(f"{i:04x}: {" ".join(format(byte, "08b") for byte in self.mem[i : i + 4])}")
                         continue
+                elif args[0] in {"program", "p"}:
+                    self.print_program()
 
             elif cmd == "q" or cmd == "quit":
                 self.debug = False
@@ -360,6 +357,18 @@ List of commands:
                 print(f"Invalid command: {cmd}")
         print()
 
+    def print_program(self):
+        print()
+        for i, line in enumerate(self.program.lines):
+            if (pc := self.program.abs_to_pc_line.get(i, -1)) != -1:
+                # TODO: handle spacing more robustly
+                print(f"{pc :>4} {line :<30}", end="")
+                print(" ".join([format(b, "08b") for b in self.mem[i:i+4]]))
+            else:
+                print(line)
+        print()
+
+
     def print_regs(self):
         print(f"r0:  [{self.format_reg(0)  :>10}] r1:  [{self.format_reg(1)  :>10}] r2:  [{self.format_reg(2)  :>10}] r3:  [{self.format_reg(3)  :>10}]")
         print(f"r4:  [{self.format_reg(4)  :>10}] r5:  [{self.format_reg(5)  :>10}] r6:  [{self.format_reg(6)  :>10}] r7:  [{self.format_reg(7)  :>10}]")
@@ -376,7 +385,6 @@ List of commands:
 
     def format_reg(self, regbin: int) -> str:
         return f"{tc_b32_to_int(self.reg[regbin])}"
-
 
     def step_pc(self):
         self.pc += WORD_SIZE
