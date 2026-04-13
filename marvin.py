@@ -19,31 +19,32 @@ the emulator prints the assembled instructions to stdout before simulating them.
 # Maps opcodes to their binary 8-bit codes.
 opcode_to_bin = {
     # system instructions
-    "halt":   0b00000000, "readi":   0b00000001, "readf":  0b00000010, "readc":   0b00000011,
-    "writei": 0b00000100, "writef":  0b00000101, "writec": 0b00000110, "seed":    0b00000111,
-    "rand":   0b00001000, "time":    0b00001001, "date":   0b00001010, "nop":     0b00001111,
+    "halt":   0b00000000, "readi":  0b00000001, "readf":  0b00000010, "readc": 0b00000011,
+    "writei": 0b00000100, "writef": 0b00000101, "writec": 0b00000110, "seed":  0b00000111,
+    "rand":   0b00001000, "time":   0b00001001, "date":   0b00001010, "nop":   0b00001111,
     # arithmetic instructions
-    "addi":   0b00010000, "subi":    0b00010001, "muli":   0b00010010, "divi":    0b00010011,
-    "modi":   0b00010100, "negi":    0b00010101, "addf":   0b00010110, "subf":    0b00010111,
-    "mulf":   0b00011000, "divf":    0b00011001, "negf":   0b00011010,
+    "addi":   0b00010000, "subi":   0b00010001, "muli":   0b00010010, "divi":  0b00010011,
+    "modi":   0b00010100, "negi":   0b00010101, "addf":   0b00010110, "subf":  0b00010111,
+    "mulf":   0b00011000, "divf":   0b00011001, "negf":   0b00011010,
     # bitwise instructions
-    "and":    0b00100000, "or":      0b00100001, "xor":    0b00100010, "not":     0b00100011,
-    "lshl":   0b00100100, "lshr":    0b00100101, "ashl":   0b00100110, "ashr":    0b00100111,
+    "and":    0b00100000, "or":     0b00100001, "xor":    0b00100010, "not":   0b00100011,
+    "lshl":   0b00100100, "lshr":   0b00100101, "ashl":   0b00100110, "ashr":  0b00100111,
     # jump instructions
-    "jump":   0b00110000, "jra":   0b00110001, "jeqz":   0b00110010, "jnez":    0b00110011,
-    "jge":    0b00110100, "jle":     0b00110101, "jeq":    0b00110110, "jne":     0b00110111,
-    "jgt":    0b00111000, "jlt":     0b00111001, "jsr":    0b00111010,
+    "jump":   0b00110000, "jra":    0b00110001, "jeqz":   0b00110010, "jnez":  0b00110011,
+    "jge":    0b00110100, "jle":    0b00110101, "jeq":    0b00110110, "jne":   0b00110111,
+    "jgt":    0b00111000, "jlt":    0b00111001, "jsr":    0b00111010,
     # register instructions
-    "seti":   0b01000000, "inci":    0b01000001, "setf":   0b01000010, "incf":    0b01000011,
+    "seti":   0b01000000, "inci":   0b01000001, "setf":   0b01000010, "incf":  0b01000011,
     "copy":   0b01000100,
     # stack insructions
-    "pushb":  0b01010000, "popb":    0b01010001, "pushs":  0b01010010, "pops":    0b01010011,
-    "pushw":  0b01010100, "popw":    0b01010101,
+    "pushb":  0b01010000, "popb":   0b01010001,
+    "pushs":  0b01010010, "pops":   0b01010011,
+    "pushw":  0b01010100, "popw":   0b01010101,
     # load/store instructions
-    "loadnb": 0b01100000, "storenb": 0b01100001, "loadrb": 0b01100010, "storerb": 0b01100011,
-    "loadns": 0b01100100, "storens": 0b01100101, "loadrs": 0b01100110, "storers": 0b01100111,
-    "loadnw": 0b01101000, "storenw": 0b01101001, "loadrw": 0b01101010, "storerw": 0b01101011,
-    "loadab": 0b01101100, "loadas" : 0b01101101, "loadaw": 0b01101110
+    "ldbn":   0b01100000, "stbn":   0b01100001, "ldbr":   0b01100010, "stbr":  0b01100011,
+    "ldsn":   0b01100100, "stsn":   0b01100101, "ldsr":   0b01100110, "stsr":  0b01100111,
+    "ldwn":   0b01101000, "stwn":   0b01101001, "ldwr":   0b01101010, "stwr":  0b01101011,
+    "ldba":   0b01101100, "ldsa":   0b01101101, "ldwa":   0b01101110
 }
 
 # Maps 8-bit binary codes to the opcodes they represent.
@@ -52,31 +53,32 @@ bin_to_opcode = {opcode_to_bin[opcode]: opcode for opcode in opcode_to_bin.keys(
 # Maps opcodes to their symbolic argument masks.
 opcode_to_argmask = {
     # system instructions
-    "halt":   "",    "readi":   "r",   "readf":  "r",   "readc":   "r",
-    "writei": "r",   "writef":  "r",   "writec": "r",   "seed":    "r",
-    "rand":   "rrr", "time":    "r",   "date":   "r",   "nop":     "",
+    "halt":   "",    "readi":  "r",   "readf":  "r",   "readc": "r",
+    "writei": "r",   "writef": "r",   "writec": "r",   "seed":  "r",
+    "rand":   "rrr", "time":   "r",   "date":   "r",   "nop":   "",
     # arithmetic instructions
-    "addi":   "rrr", "subi":    "rrr", "muli":   "rrr", "divi":    "rrr",
-    "modi":   "rrr", "negi":    "rr",  "addf":   "rrr", "subf":    "rrr",
-    "mulf":   "rrr", "divf":    "rrr", "negf":   "rr",
+    "addi":   "rrr", "subi":   "rrr", "muli":   "rrr", "divi":  "rrr",
+    "modi":   "rrr", "negi":   "rr",  "addf":   "rrr", "subf":  "rrr",
+    "mulf":   "rrr", "divf":   "rrr", "negf":   "rr",
     # bitwise instructions
-    "and":    "rrr", "or":      "rrr", "xor":    "rrr", "not":     "rrr",
-    "lshl":   "rr",  "lshr":    "rr",  "ashl":   "rr",  "ashr":    "rr",
+    "and":    "rrr", "or":     "rrr", "xor":    "rrr", "not":   "rrr",
+    "lshl":   "rr",  "lshr":   "rr",  "ashl":   "rr",  "ashr":  "rr",
     # jump instructions
-    "jump":   "l",   "jra":   "r",   "jeqz":   "rl",  "jnez":    "rl",
-    "jge":    "rrl", "jle":     "rrl", "jeq":    "rrl", "jne":     "rrl",
-    "jgt":    "rrl", "jlt":     "rrl", "jsr":    "rl",
+    "jump":   "l",   "jra":    "r",   "jeqz":   "rl",  "jnez":  "rl",
+    "jge":    "rrl", "jle":    "rrl", "jeq":    "rrl", "jne":   "rrl",
+    "jgt":    "rrl", "jlt":    "rrl", "jsr":    "rl",
     # register instructions
-    "seti":   "rn",  "inci":    "rn",  "setf":   "rf",  "incf":    "rf",
+    "seti":   "rn",  "inci":   "rn",  "setf":   "rf",  "incf":  "rf",
     "copy":   "rr",
     # stack insructions
-    "pushb":  "rr",  "popb":    "rr",  "pushs":  "rr",  "pops":    "rr",
-    "pushw":  "rr",  "popw":    "rr",
+    "pushb":  "rr",  "popb":   "rr",
+    "pushs":  "rr",  "pops":   "rr",
+    "pushw":  "rr",  "popw":   "rr",
     # load/store instructions
-    "loadnb": "rrn", "storenb": "rrn", "loadrb": "rr",  "storerb": "rr",
-    "loadns": "rrn", "storens": "rrn", "loadrs": "rr",  "storers": "rr",
-    "loadnw": "rrn", "storenw": "rrn", "loadrw": "rr",  "storerw": "rr",
-    "loadab": "ra",  "loadas":  "ra",  "loadaw": "ra",
+    "ldbn":   "rrn", "stbn":   "rrn", "ldbr":   "rr",  "stbr":  "rr",
+    "ldsn":   "rrn", "stsn":   "rrn", "ldsr":   "rr",  "stsr":  "rr",
+    "ldwn":   "rrn", "stwn":   "rrn", "ldwr":   "rr",  "stwr":  "rr",
+    "ldba":   "ra",  "ldsa":   "ra",  "ldwa":   "ra",
 }
 
 # Maps register names to their binary 4-bit codes.
@@ -689,56 +691,56 @@ List of commands:
 
     # TODO: add 0xff mask to left shifted bytes?
 
-    def op_loadnb(self, args: list[int]):
+    def op_ldbn(self, args: list[int]):
         addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
         word = self.mem[addr : addr - BYTE_SIZE : -1]
         self.reg[args[0]] = word[0]
         self.step_pc()
 
-    def op_storenb(self, args: list[int]):
+    def op_stbn(self, args: list[int]):
         addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
         self.mem[addr - 0] = self.reg[args[0]] & 0xff
         self.step_pc()
 
-    def op_loadrb(self, args: list[int]):
+    def op_ldbr(self, args: list[int]):
         word = self.mem[self.reg[args[1]] : self.reg[args[1]] - BYTE_SIZE : -1]
         self.reg[args[0]] = word[0]
         self.step_pc()
 
-    def op_storerb(self, args: list[int]):
+    def op_stbr(self, args: list[int]):
         self.mem[self.reg[args[1]] - 0] = self.reg[args[0]] & 0xff
         self.step_pc()
 
-    def op_loadns(self, args: list[int]):
+    def op_ldsn(self, args: list[int]):
         addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
         word = self.mem[addr : addr - SHORT_SIZE : -1]
         self.reg[args[0]] = word[1] << 8 | word[0]
         self.step_pc()
 
-    def op_storens(self, args: list[int]):
+    def op_stsn(self, args: list[int]):
         addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
         self.mem[addr - 0] = self.reg[args[0]] & 0xff
         self.mem[addr - 1] = (self.reg[args[0]] >> 8) & 0xff
         self.step_pc()
 
-    def op_loadrs(self, args: list[int]):
+    def op_ldsr(self, args: list[int]):
         word = self.mem[self.reg[args[1]] : self.reg[args[1]] - SHORT_SIZE : -1]
         self.reg[args[0]] = word[1] << 8 | word[0]
         self.step_pc()
 
-    def op_storers(self, args: list[int]):
+    def op_stsr(self, args: list[int]):
         self.mem[self.reg[args[1]] - 0] = self.reg[args[0]] & 0xff
         self.mem[self.reg[args[1]] - 1] = (self.reg[args[0]] >> 8) & 0xff
         self.step_pc()
 
     # TODO: make explicit in documentation that loadn* loads from offset in bytes, not words
-    def op_loadnw(self, args: list[int]):
+    def op_ldwn(self, args: list[int]):
         addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
         word = self.mem[addr : addr - WORD_SIZE : -1]
         self.reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
         self.step_pc()
 
-    def op_storenw(self, args: list[int]):
+    def op_stwn(self, args: list[int]):
         addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
         self.mem[addr - 0] = self.reg[args[0]] & 0xff
         self.mem[addr - 1] = (self.reg[args[0]] >> 8) & 0xff
@@ -746,30 +748,30 @@ List of commands:
         self.mem[addr - 3] = (self.reg[args[0]] >> 24) & 0xff
         self.step_pc()
 
-    def op_loadrw(self, args: list[int]):
+    def op_ldwr(self, args: list[int]):
         word = self.mem[self.reg[args[1]] : self.reg[args[1]] - WORD_SIZE : -1]
         self.reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
         self.step_pc()
 
-    def op_storerw(self, args: list[int]):
+    def op_stwr(self, args: list[int]):
         self.mem[self.reg[args[1]] - 0] = self.reg[args[0]] & 0xff
         self.mem[self.reg[args[1]] - 1] = (self.reg[args[0]] >> 8) & 0xff
         self.mem[self.reg[args[1]] - 2] = (self.reg[args[0]] >> 16) & 0xff
         self.mem[self.reg[args[1]] - 3] = (self.reg[args[0]] >> 24) & 0xff
         self.step_pc()
 
-    def op_loadab(self, args: list[int]):
+    def op_ldba(self, args: list[int]):
         byte = self.mem[args[1]]
         self.reg[args[0]] = byte
         self.step_pc()
 
-    def op_loadas(self, args: list[int]):
+    def op_ldsa(self, args: list[int]):
         short = self.mem[args[1] : args[1] + SHORT_SIZE]
         self.reg[args[0]] = short[0] << 8 | short[1]
         self.step_pc()
 
     # TODO: should this read memory upwards or downwards?
-    def op_loadaw(self, args:list[int]):
+    def op_ldwa(self, args:list[int]):
         word = self.mem[args[1] : args[1] + WORD_SIZE]
         self.reg[args[0]] = word[0] << 24 | word[1] << 16 | word[2] << 8 | word[3]
         self.step_pc()

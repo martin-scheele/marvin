@@ -23,7 +23,7 @@ factorial:
     pushw     r4 sp           # mem[sp--] = r4
     pushw     r5 sp           # mem[sp--] = r5
 
-    loadnw    r3 fp 12        # n = mem[fp + 12]
+    ldwn      r3 fp 12        # n = mem[fp + 12]
     jnez      r3 factorialRec # if n != 0 jump to 16 (recursive step),
                               # else fall through (base case)
 
