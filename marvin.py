@@ -105,13 +105,11 @@ def main():
     # Process command-line inputs and exit if they are not as expected.
     parser = argparse.ArgumentParser(description=description)
     _ = parser.add_argument("filename", help="input .marv file")
-    _ = parser.add_argument("-v", "--verbose", action="store_true", help="enable verbose output")
     _ = parser.add_argument("-d", "--debug",   action="store_true", help="enable debug mode")
     _ = parser.add_argument("-c", "--count",   action="store_true", help="count instruction calls")
     args = parser.parse_args()
 
     inFile = args.filename
-    verbose = args.verbose
     debug = args.debug
     count_calls = args.count
 
@@ -125,7 +123,7 @@ def main():
     if not program.machine_code:
         sys.exit()
 
-    cpu = CPU(program, verbose, debug, count_calls)
+    cpu = CPU(program, debug, count_calls)
     cpu.run()
 
 @dataclass
@@ -146,9 +144,8 @@ HEAP_START = 8192
 DATA_START = HEAP_START
 
 class CPU:
-    def __init__(self, program: Program, verbose: bool, debug: bool, count_calls: bool):
+    def __init__(self, program: Program, debug: bool, count_calls: bool):
         self.program: Program = program
-        self.verbose: bool = verbose
         self.debug: bool = debug
         self.count_calls: bool = count_calls
 
@@ -158,7 +155,7 @@ class CPU:
         self.ir: int = 0
 
         self.breakpoints: set[int] = set()
-        self.continue_debug: bool = False
+        self.debug_continue_flag: bool = False
 
         # Load the machine code into memory starting at location 0.
         for i, v in enumerate(self.program.machine_code):
@@ -188,10 +185,6 @@ class CPU:
         # Initialize the frame, stack, and global pointers
         self.reg[reg_to_bin["fp"]] = self.reg[reg_to_bin["sp"]] = STACK_MAX
         self.reg[reg_to_bin["gp"]] = DATA_START + heap_offset
-
-        if self.verbose:
-            self.print_program()
-
 
     def run(self):
         while True:
@@ -223,7 +216,7 @@ class CPU:
             return
         if self.pc // 4 in self.breakpoints:
             pass
-        elif self.continue_debug:
+        elif self.debug_continue_flag:
             return
 
         print(self.program.lines[self.program.pc_to_abs_line[self.pc // 4]])
@@ -235,10 +228,10 @@ class CPU:
             cmd = tokens[0]
             args = [] if len(tokens) == 1 else tokens[1:]
             if cmd == "c" or cmd == "continue":
-                self.continue_debug = True
+                self.debug_continue_flag = True
                 break
             elif cmd == "s" or cmd == "step":
-                self.continue_debug = False
+                self.debug_continue_flag = False
                 break
             elif cmd == "b" or cmd == "break":
                 if not args:
@@ -351,8 +344,8 @@ List of commands:
         Usage: (l | list)
 
     print, p -- print register or stack information
-        Usage: (p | print) [(s | stack) [<start> <stop> | <address>]]
-               (p | print) [(r | reg) [(<reg>) [<type>]]]
+        Usage: (p | print) [(s | stack) [<start> <stop> | <address>]] |
+               (p | print) [(r | reg) [(<reg>) [<type>]]] |
                (p | print) [(p | program)]
                 """
                 print(help_str)
@@ -365,6 +358,7 @@ List of commands:
         for i, line in enumerate(self.program.lines):
             if (pc := self.program.abs_to_pc_line.get(i, -1)) != -1:
                 # TODO: handle spacing more robustly
+                # TODO: hex memory address instead of instruction number?
                 print(f"{pc :>4} {line :<30}", end="")
                 print(" ".join([format(b, "08b") for b in self.mem[i:i+4]]))
             else:
@@ -927,6 +921,8 @@ class Parser:
         pc_line = 0
         abs_line = 0
 
+        halt_found = False
+
         # Validate text section.
         for line in lines[text_start:text_end]:
             line = line.strip().lower()
@@ -984,6 +980,12 @@ class Parser:
             self.abs_to_pc_line[abs_line] = pc_line
             pc_line += 1
             abs_line += 1
+
+            if opcode == "halt":
+                halt_found = True
+
+        if not halt_found:
+            sys.exit(f"Error: {self.inFile}: halt instruction not found")
 
         return tuples
 
