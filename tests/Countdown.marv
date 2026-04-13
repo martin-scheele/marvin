@@ -4,9 +4,9 @@
     readi    r0          # read n
     seti     r1 0        # zero = 0
 continue:
-    jltn     r0 r1 done  # if n < zero jump to done
+    jlt      r0 r1 done  # if n < zero jump to done
     writei   r0          # write n
-    addi     r0 -1       # n = n - 1
-    jumpn    continue    # jump to continue
+    inci     r0 -1       # n = n - 1
+    jump     continue    # jump to continue
 done:
     halt                 # halt the machine

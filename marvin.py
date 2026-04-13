@@ -23,22 +23,22 @@ opcode_to_bin = {
     "writei": 0b00000100, "writef":  0b00000101, "writec": 0b00000110, "seed":    0b00000111,
     "rand":   0b00001000, "time":    0b00001001, "date":   0b00001010, "nop":     0b00001111,
     # arithmetic instructions
-    "add":    0b00010000, "sub":     0b00010001, "mul":    0b00010010, "div":     0b00010011,
-    "mod":    0b00010100, "neg":     0b00010101, "fadd":   0b00010110, "fsub":    0b00010111,
-    "fmul":   0b00011000, "fdiv":    0b00011001, "fneg":   0b00011010,
+    "addi":   0b00010000, "subi":    0b00010001, "muli":   0b00010010, "divi":    0b00010011,
+    "modi":   0b00010100, "negi":    0b00010101, "addf":   0b00010110, "subf":    0b00010111,
+    "mulf":   0b00011000, "divf":    0b00011001, "negf":   0b00011010,
     # bitwise instructions
     "and":    0b00100000, "or":      0b00100001, "xor":    0b00100010, "not":     0b00100011,
     "lshl":   0b00100100, "lshr":    0b00100101, "ashl":   0b00100110, "ashr":    0b00100111,
     # jump instructions
-    "jumpn":  0b00110000, "jumpr":   0b00110001, "jeqzn":  0b00110010, "jnezn":   0b00110011,
-    "jgen":   0b00110100, "jlen":    0b00110101, "jeqn":   0b00110110, "jnen":    0b00110111,
-    "jgtn":   0b00111000, "jltn":    0b00111001, "calln":  0b00111010,
+    "jump":   0b00110000, "jra":   0b00110001, "jeqz":   0b00110010, "jnez":    0b00110011,
+    "jge":    0b00110100, "jle":     0b00110101, "jeq":    0b00110110, "jne":     0b00110111,
+    "jgt":    0b00111000, "jlt":     0b00111001, "jsr":    0b00111010,
     # register instructions
-    "seti":   0b01000000, "addi":    0b01000001, "setf":   0b01000010, "addf":    0b01000011,
+    "seti":   0b01000000, "inci":    0b01000001, "setf":   0b01000010, "incf":    0b01000011,
     "copy":   0b01000100,
     # stack insructions
-    "pushrb": 0b01010000, "poprb":   0b01010001, "pushrs": 0b01010010, "poprs":   0b01010011,
-    "pushrw": 0b01010100, "poprw":   0b01010101,
+    "pushb":  0b01010000, "popb":    0b01010001, "pushs":  0b01010010, "pops":    0b01010011,
+    "pushw":  0b01010100, "popw":    0b01010101,
     # load/store instructions
     "loadnb": 0b01100000, "storenb": 0b01100001, "loadrb": 0b01100010, "storerb": 0b01100011,
     "loadns": 0b01100100, "storens": 0b01100101, "loadrs": 0b01100110, "storers": 0b01100111,
@@ -52,30 +52,30 @@ bin_to_opcode = {opcode_to_bin[opcode]: opcode for opcode in opcode_to_bin.keys(
 # Maps opcodes to their symbolic argument masks.
 opcode_to_argmask = {
     # system instructions
-    "halt":   "",    "readi":  "r",   "readf":  "r",   "readc":  "r",
-    "writei": "r",   "writef": "r",   "writec": "r",   "seed":   "r",
-    "rand":   "rrr", "time":   "r",   "date":   "r",   "nop":    "",
+    "halt":   "",    "readi":   "r",   "readf":  "r",   "readc":   "r",
+    "writei": "r",   "writef":  "r",   "writec": "r",   "seed":    "r",
+    "rand":   "rrr", "time":    "r",   "date":   "r",   "nop":     "",
     # arithmetic instructions
-    "add":    "rrr", "sub":    "rrr", "mul":    "rrr", "div":    "rrr",
-    "mod":    "rrr", "neg":    "rr",  "fadd":   "rrr", "fsub":   "rrr",
-    "fmul":   "rrr", "fdiv":   "rrr", "fneg":   "rr",
+    "addi":   "rrr", "subi":    "rrr", "muli":   "rrr", "divi":    "rrr",
+    "modi":   "rrr", "negi":    "rr",  "addf":   "rrr", "subf":    "rrr",
+    "mulf":   "rrr", "divf":    "rrr", "negf":   "rr",
     # bitwise instructions
-    "and":    "rrr", "or":     "rrr", "xor":    "rrr", "not":    "rrr",
-    "lshl":   "rr",  "lshr":   "rr",  "ashl":   "rr",  "ashr":   "rr",
+    "and":    "rrr", "or":      "rrr", "xor":    "rrr", "not":     "rrr",
+    "lshl":   "rr",  "lshr":    "rr",  "ashl":   "rr",  "ashr":    "rr",
     # jump instructions
-    "jumpn":  "l",   "jumpr":  "r",   "jeqzn":  "rl",  "jnezn":  "rl",
-    "jgen":   "rrl", "jlen":   "rrl", "jeqn":   "rrl", "jnen":   "rrl",
-    "jgtn":   "rrl", "jltn":   "rrl", "calln":  "rl",
+    "jump":   "l",   "jra":   "r",   "jeqz":   "rl",  "jnez":    "rl",
+    "jge":    "rrl", "jle":     "rrl", "jeq":    "rrl", "jne":     "rrl",
+    "jgt":    "rrl", "jlt":     "rrl", "jsr":    "rl",
     # register instructions
-    "seti":   "rn",  "addi":   "rn",  "setf":   "rf",  "addf":   "rf",
+    "seti":   "rn",  "inci":    "rn",  "setf":   "rf",  "incf":    "rf",
     "copy":   "rr",
     # stack insructions
-    "pushrb": "rr",  "poprb":  "rr",  "pushrs": "rr", "poprs":   "rr",
-    "pushrw": "rr",  "poprw":  "rr",
+    "pushb":  "rr",  "popb":    "rr",  "pushs":  "rr",  "pops":    "rr",
+    "pushw":  "rr",  "popw":    "rr",
     # load/store instructions
-    "loadnb": "rrn", "storenb": "rrn", "loadrb": "rr", "storerb": "rr",
-    "loadns": "rrn", "storens": "rrn", "loadrs": "rr", "storers": "rr",
-    "loadnw": "rrn", "storenw": "rrn", "loadrw": "rr", "storerw": "rr",
+    "loadnb": "rrn", "storenb": "rrn", "loadrb": "rr",  "storerb": "rr",
+    "loadns": "rrn", "storens": "rrn", "loadrs": "rr",  "storers": "rr",
+    "loadnw": "rrn", "storenw": "rrn", "loadrw": "rr",  "storerw": "rr",
     "loadab": "ra",  "loadas":  "ra",  "loadaw": "ra",
 }
 
@@ -468,47 +468,47 @@ List of commands:
 
 # Arithmetic instructions
 
-    def op_neg(self, args: list[int]):
+    def op_negi(self, args: list[int]):
         self.reg[args[0]] = tc_neg(self.reg[args[1]])
         self.step_pc()
 
-    def op_add(self, args: list[int]):
+    def op_addi(self, args: list[int]):
         self.reg[args[0]] = tc_add(self.reg[args[1]], self.reg[args[2]])
         self.step_pc()
 
-    def op_sub(self, args: list[int]):
+    def op_subi(self, args: list[int]):
         self.reg[args[0]] = tc_sub(self.reg[args[1]], self.reg[args[2]])
         self.step_pc()
 
-    def op_mul(self, args: list[int]):
+    def op_muli(self, args: list[int]):
         self.reg[args[0]] = tc_mul(self.reg[args[1]], self.reg[args[2]])
         self.step_pc()
 
-    def op_div(self, args: list[int]):
+    def op_divi(self, args: list[int]):
         self.reg[args[0]] = tc_div(self.reg[args[1]], self.reg[args[2]])
         self.step_pc()
 
-    def op_mod(self, args: list[int]):
+    def op_modi(self, args: list[int]):
         self.reg[args[0]] = tc_mod(self.reg[args[1]], self.reg[args[2]])
         self.step_pc()
 
-    def op_fneg(self, args: list[int]):
+    def op_negf(self, args: list[int]):
         self.reg[args[0]] = self.reg[args[1]] ^ (1 << 31)
         self.step_pc()
 
-    def op_fadd(self, args: list[int]):
+    def op_addf(self, args: list[int]):
         self.reg[args[0]] = fp_float_to_f32(fp_f32_to_float(self.reg[args[1]]) + fp_f32_to_float(self.reg[args[2]]))
         self.step_pc()
 
-    def op_fsub(self, args: list[int]):
+    def op_subf(self, args: list[int]):
         self.reg[args[0]] = fp_float_to_f32(fp_f32_to_float(self.reg[args[1]]) - fp_f32_to_float(self.reg[args[2]]))
         self.step_pc()
 
-    def op_fmul(self, args: list[int]):
+    def op_mulf(self, args: list[int]):
         self.reg[args[0]] = fp_float_to_f32(fp_f32_to_float(self.reg[args[1]]) * fp_f32_to_float(self.reg[args[2]]))
         self.step_pc()
 
-    def op_fdiv(self, args: list[int]):
+    def op_divf(self, args: list[int]):
         self.reg[args[0]] = fp_float_to_f32(fp_f32_to_float(self.reg[args[1]]) / fp_f32_to_float(self.reg[args[2]]))
         self.step_pc()
 
@@ -556,61 +556,61 @@ List of commands:
 
     # Jump Instructions
 
-    def op_jumpn(self, args: list[int]):
+    def op_jump(self, args: list[int]):
         self.pc = args[0] * WORD_SIZE
 
-    def op_jumpr(self, args: list[int]):
+    def op_jra(self, args: list[int]):
         self.pc = self.reg[args[0]]
 
-    def op_jeqzn(self, args: list[int]):
+    def op_jeqz(self, args: list[int]):
         self.pc = args[1] * WORD_SIZE if tc_b32_to_int(self.reg[args[0]]) == 0 else self.pc + WORD_SIZE
 
-    def op_jnezn(self, args: list[int]):
+    def op_jnez(self, args: list[int]):
         self.pc = args[1] * WORD_SIZE if tc_b32_to_int(self.reg[args[0]]) != 0 else self.pc + WORD_SIZE
 
-    def op_jgen(self, args: list[int]):
+    def op_jge(self, args: list[int]):
         self.pc = (
             args[2] * WORD_SIZE
             if tc_b32_to_int(self.reg[args[0]]) >= tc_b32_to_int(self.reg[args[1]])
             else self.pc + WORD_SIZE
         )
 
-    def op_jlen(self, args: list[int]):
+    def op_jle(self, args: list[int]):
         self.pc = (
             args[2] * WORD_SIZE
             if tc_b32_to_int(self.reg[args[0]]) <= tc_b32_to_int(self.reg[args[1]])
             else self.pc + WORD_SIZE
         )
 
-    def op_jeqn(self, args: list[int]):
+    def op_jeq(self, args: list[int]):
         self.pc = (
             args[2] * WORD_SIZE
             if tc_b32_to_int(self.reg[args[0]]) == tc_b32_to_int(self.reg[args[1]])
             else self.pc + WORD_SIZE
         )
 
-    def op_jnen(self, args: list[int]):
+    def op_jne(self, args: list[int]):
         self.pc = (
             args[2] * WORD_SIZE
             if tc_b32_to_int(self.reg[args[0]]) != tc_b32_to_int(self.reg[args[1]])
             else self.pc + WORD_SIZE
         )
 
-    def op_jgtn(self, args: list[int]):
+    def op_jgt(self, args: list[int]):
         self.pc = (
             args[2] * WORD_SIZE
             if tc_b32_to_int(self.reg[args[0]]) > tc_b32_to_int(self.reg[args[1]])
             else self.pc + WORD_SIZE
         )
 
-    def op_jltn(self, args: list[int]):
+    def op_jlt(self, args: list[int]):
         self.pc = (
             args[2] * WORD_SIZE
             if tc_b32_to_int(self.reg[args[0]]) < tc_b32_to_int(self.reg[args[1]])
             else self.pc + WORD_SIZE
         )
 
-    def op_calln(self, args: list[int]):
+    def op_jsr(self, args: list[int]):
         # I think this is guaranteed to never be over integer limit
         self.reg[args[0]] = self.pc + WORD_SIZE
         self.pc = args[1] * WORD_SIZE
@@ -621,7 +621,7 @@ List of commands:
         self.reg[args[0]] = tc_b16_to_b32(args[1])
         self.step_pc()
 
-    def op_addi(self, args: list[int]):
+    def op_inci(self, args: list[int]):
         self.reg[args[0]] = tc_add(self.reg[args[0]], tc_b16_to_b32(args[1]))
         self.step_pc()
 
@@ -629,7 +629,7 @@ List of commands:
         self.reg[args[0]] = fp_f16_to_f32(args[1])
         self.step_pc()
 
-    def op_addf(self, args: list[int]):
+    def op_incf(self, args: list[int]):
         self.reg[args[0]] = fp_float_to_f32(fp_f32_to_float(self.reg[args[0]]) + fp_f32_to_float(self.reg[args[1]]))
         self.step_pc()
 
@@ -641,20 +641,20 @@ List of commands:
 
     # TODO: clean up generic code for single bytes etc
 
-    def op_pushrb(self, args: list[int]):
+    def op_pushb(self, args: list[int]):
         if self.reg[reg_to_bin["sp"]] <= self.reg[reg_to_bin["gp"]]:
             sys.exit(f"Error: stack overflow attempting to execute instruction {self.pc // WORD_SIZE}; halting the machine")
         self.mem[self.reg[args[1]] - 0] = self.reg[args[0]] & 0xff
         self.reg[args[1]] = tc_sub(self.reg[args[1]], BYTE_SIZE)
         self.step_pc()
 
-    def op_poprb(self, args: list[int]):
+    def op_popb(self, args: list[int]):
         self.reg[args[1]] = tc_add(self.reg[args[1]], BYTE_SIZE)
         word = self.mem[self.reg[args[1]] : self.reg[args[1]] - BYTE_SIZE : -1]
         self.reg[args[0]] = word[0]
         self.step_pc()
 
-    def op_pushrs(self, args: list[int]):
+    def op_pushs(self, args: list[int]):
         if self.reg[reg_to_bin["sp"]] <= self.reg[reg_to_bin["gp"]]:
             sys.exit(f"Error: stack overflow attempting to execute instruction {self.pc // WORD_SIZE}; halting the machine")
         self.mem[self.reg[args[1]] - 0] = self.reg[args[0]] & 0xff
@@ -662,13 +662,13 @@ List of commands:
         self.reg[args[1]] = tc_sub(self.reg[args[1]], SHORT_SIZE)
         self.step_pc()
 
-    def op_poprs(self, args: list[int]):
+    def op_pops(self, args: list[int]):
         self.reg[args[1]] = tc_add(self.reg[args[1]], SHORT_SIZE)
         word = self.mem[self.reg[args[1]] : self.reg[args[1]] - SHORT_SIZE : -1]
         self.reg[args[0]] = word[1] << 8 | word[0]
         self.step_pc()
 
-    def op_pushrw(self, args: list[int]):
+    def op_pushw(self, args: list[int]):
         if self.reg[reg_to_bin["sp"]] <= self.reg[reg_to_bin["gp"]]:
             sys.exit(f"Error: stack overflow attempting to execute instruction {self.pc // WORD_SIZE}; halting the machine")
         self.mem[self.reg[args[1]] - 0] = self.reg[args[0]] & 0xff
@@ -678,7 +678,7 @@ List of commands:
         self.reg[args[1]] = tc_sub(self.reg[args[1]], WORD_SIZE)
         self.step_pc()
 
-    def op_poprw(self, args: list[int]):
+    def op_popw(self, args: list[int]):
         global reg
         self.reg[args[1]] = tc_add(self.reg[args[1]], WORD_SIZE)
         word = self.mem[self.reg[args[1]] : self.reg[args[1]] - WORD_SIZE : -1]
@@ -986,7 +986,7 @@ class Parser:
         return tuples
 
     def _assemble(self, tokens: list[tuple[str, *tuple[str, ...]]]):
-        for id, t in enumerate(tokens):
+        for _, t in enumerate(tokens):
             opcode, args = t[0], t[1:]
 
             # TODO: do something that is not this...?

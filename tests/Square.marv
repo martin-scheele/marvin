@@ -1,8 +1,8 @@
 # Accepts n (int) from standard input and writes n * n to standard output.
 .text
     readi    r0           # read n
-    calln    r12 square   # result = square(n)
-    writei   r13          # write result
+    jsr      ra square    # result = square(n)
+    writei   rv           # write result
     halt                  # halt the machine
 
 # int square(int n):
@@ -10,5 +10,5 @@
 #   output: r13 = n * n
 
 square:
-    mul      r13 r0 r0    # output = n * n
-    jumpr    r12          # jump to caller
+    muli     rv r0 r0     # output = n * n
+    jra      ra           # jump to caller

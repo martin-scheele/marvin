@@ -1,28 +1,31 @@
 # Accepts n (int) and k (int) from standard input and writes C(n, k) = n!/(k!(n-k)!) to standard output.
-
-0     readi    r3            # read n
-1     readi    r4            # read k
-2     copy     r5 r3         # r5 = n
-3     calln    ra 13         # n! = factorial(n)
-4     copy     r7 rv         # r7 = n!
-5     copy     r5 r4         # r5 = k
-6     calln    ra 13         # k! = factorial(k)
-7     div      r7 r7 rv      # r7 = n!/k!
-8     sub      r5 r3 r4      # r5 = n - k
-9     calln    ra 13         # (n-k)! = factorial(n-k)
-10    div      r7 r7 rv      # r7 = n!/(k!(n-k)!)
-11    writei   r7            # write n!/(k!(n-k)!)
-12    halt                   # halt the machine
+.text
+      readi    r3            # read n
+      readi    r4            # read k
+      copy     r5 r3         # r5 = n
+      jsr      ra factorial  # n! = factorial(n)
+      copy     r7 rv         # r7 = n!
+      copy     r5 r4         # r5 = k
+      jsr      ra factorial  # k! = factorial(k)
+      divi     r7 r7 rv      # r7 = n!/k!
+      subi     r5 r3 r4      # r5 = n - k
+      jsr      ra factorial  # (n-k)! = factorial(n-k)
+      divi     r7 r7 rv      # r7 = n!/(k!(n-k)!)
+      writei   r7            # write n!/(k!(n-k)!)
+      halt                   # halt the machine
 
 # int factorial(int n):
 #   input:  r5 = n
 #   output: rv = n!
 #   temps:  r6
 
-13    setn     rv 1          # output = 1
-14    copy     r6 r5         # i = n
-15    jeqzn    r6 19         # if i = 0 jump to 19
-16    mul      rv rv r6      # output = output * i
-17    addn     r6 -1         # i = i - 1
-18    jumpn    15            # jump to 15
-19    jumpr    ra            # jump to caller
+factorial:
+      seti     rv 1          # output = 1
+      copy     r6 r5         # i = n
+loop:
+      jeqz     r6 return     # if i = 0 jump to 19
+      muli     rv rv r6      # output = output * i
+      inci     r6 -1         # i = i - 1
+      jump     loop          # jump to loop
+return:
+      jra      ra            # jump to caller

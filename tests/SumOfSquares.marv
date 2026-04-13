@@ -4,8 +4,8 @@
 .text
     readi     r0          # read a
     readi     r1          # read b
-    mul       r2 r0 r0    # c = a * a
-    mul       r3 r1 r1    # d = b * b
-    add       r4 r2 r3    # e = c + d
+    muli      r2 r0 r0    # c = a * a
+    muli      r3 r1 r1    # d = b * b
+    addi      r4 r2 r3    # e = c + d
     writei    r4          # write e
     halt                  # halt the machine

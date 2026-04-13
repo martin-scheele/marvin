@@ -1,5 +1,5 @@
 .text
     seti   r4 1
 loop:
-    pushrw r4 sp
-    jumpn loop
+    pushw  r4 sp
+    jump   loop
