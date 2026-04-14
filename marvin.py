@@ -205,10 +205,7 @@ class CPU:
             except IndexError:
                 sys.exit(f"Error: attempted to execute instruction {self.pc // WORD_SIZE}; halting the machine")
 
-            try:
-                self.debug_exec()
-            except EOFError:
-                sys.exit()
+            self.debug_exec()
 
             opcode = bin_to_opcode[self.ir >> 24]
             args = extract_args(self.ir, opcode_to_argmask[opcode])
@@ -1293,5 +1290,5 @@ def print_opcode_cost():
 if __name__ == "__main__":
     try:
         main()
-    except KeyboardInterrupt:
+    except KeyboardInterrupt, EOFError:
         sys.exit()
