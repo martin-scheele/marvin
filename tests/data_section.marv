@@ -6,11 +6,11 @@
 .text
 label:
     ldwa   r0 i
-    writei r0
+    stwa   r0 9000
     ldsa   r0 c
-    writec r0
+    stsa   r0 9100
     ldwa   r0 f
-    writef r0
+    stwa   r0 9200
     ldba   r0 b
-    writei r0
+    stba   r0 9300
     halt

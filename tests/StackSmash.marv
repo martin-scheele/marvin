@@ -3,3 +3,4 @@
 loop:
     pushw  r4 sp
     jump   loop
+    halt

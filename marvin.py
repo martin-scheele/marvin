@@ -40,11 +40,15 @@ opcode_to_bin = {
     "pushb":  0b01010000, "popb":   0b01010001,
     "pushs":  0b01010010, "pops":   0b01010011,
     "pushw":  0b01010100, "popw":   0b01010101,
-    # load/store instructions
-    "ldbn":   0b01100000, "stbn":   0b01100001, "ldbr":   0b01100010, "stbr":  0b01100011,
-    "ldsn":   0b01100100, "stsn":   0b01100101, "ldsr":   0b01100110, "stsr":  0b01100111,
-    "ldwn":   0b01101000, "stwn":   0b01101001, "ldwr":   0b01101010, "stwr":  0b01101011,
-    "ldba":   0b01101100, "ldsa":   0b01101101, "ldwa":   0b01101110
+    # load/store stack instructions
+    "ldbn":   0b01100000, "ldsn":   0b01100001, "ldwn":   0b01100010,
+    "stbn":   0b01100011, "stsn":   0b01100100, "stwn":   0b01100101,
+    "ldbr":   0b01100110, "ldsr":   0b01100111, "ldwr":   0b01101000,
+    "stbr":   0b01101001, "stsr":   0b01101010, "stwr":   0b01101011,
+    # load/store heap instructions
+    "ldba":   0b01110000, "ldsa":   0b01110001, "ldwa":   0b01110010,
+    "stba":   0b01110011, "stsa":   0b01110100, "stwa":   0b01110101,
+    # array instructions
 }
 
 # Maps 8-bit binary codes to the opcodes they represent.
@@ -74,11 +78,14 @@ opcode_to_argmask = {
     "pushb":  "rr",  "popb":   "rr",
     "pushs":  "rr",  "pops":   "rr",
     "pushw":  "rr",  "popw":   "rr",
-    # load/store instructions
+    # load/store stack instructions
     "ldbn":   "rrn", "stbn":   "rrn", "ldbr":   "rr",  "stbr":  "rr",
     "ldsn":   "rrn", "stsn":   "rrn", "ldsr":   "rr",  "stsr":  "rr",
     "ldwn":   "rrn", "stwn":   "rrn", "ldwr":   "rr",  "stwr":  "rr",
+    # load/store heap instructions
     "ldba":   "ra",  "ldsa":   "ra",  "ldwa":   "ra",
+    "stba":   "ra",  "stsa":   "ra",  "stwa":   "ra"
+    # array instructions
 }
 
 # Maps register names to their binary 4-bit codes.
@@ -198,7 +205,10 @@ class CPU:
             except IndexError:
                 sys.exit(f"Error: attempted to execute instruction {self.pc // WORD_SIZE}; halting the machine")
 
-            self.debug_exec()
+            try:
+                self.debug_exec()
+            except EOFError:
+                sys.exit()
 
             opcode = bin_to_opcode[self.ir >> 24]
             args = extract_args(self.ir, opcode_to_argmask[opcode])
@@ -219,10 +229,10 @@ class CPU:
         elif self.debug_continue_flag:
             return
 
-        print(self.program.lines[self.program.pc_to_abs_line[self.pc // 4]])
+        print(f"{self.pc // 4} {self.program.lines[self.program.pc_to_abs_line[self.pc // 4]]}", end="\n\n")
 
         # Get debug input.
-        while cmd := input("> "):
+        while cmd := input("(dbg) "):
             if not (tokens := cmd.split()):
                 break
             cmd = tokens[0]
@@ -359,7 +369,10 @@ List of commands:
             if (pc := self.program.abs_to_pc_line.get(i, -1)) != -1:
                 # TODO: handle spacing more robustly
                 # TODO: hex memory address instead of instruction number?
-                print(f"{pc :>4} {line :<30}", end="")
+                if pc == self.pc // 4:
+                    print(f">{pc :>3} {line :<30}", end="")
+                else:
+                    print(f"{pc :>4} {line :<30}", end="")
                 print(" ".join([format(b, "08b") for b in self.mem[i:i+4]]))
             else:
                 print(line)
@@ -681,19 +694,47 @@ List of commands:
         self.reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
         self.step_pc()
 
-    # Load/store instructions
+    # Load/store stack instructions
 
     # TODO: add 0xff mask to left shifted bytes?
 
+    # TODO: change from addr : addr - ? to addr - ? + 1 : addr + 1 ?
+    # - to avoid case where addr - ? is -1 and last byte gets cut off
     def op_ldbn(self, args: list[int]):
-        addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
+        addr = tc_sub(self.reg[args[1]], tc_b16_to_b32(args[2]))
         word = self.mem[addr : addr - BYTE_SIZE : -1]
         self.reg[args[0]] = word[0]
         self.step_pc()
 
+    def op_ldsn(self, args: list[int]):
+        addr = tc_sub(self.reg[args[1]], tc_b16_to_b32(args[2]))
+        word = self.mem[addr : addr - SHORT_SIZE : -1]
+        self.reg[args[0]] = word[1] << 8 | word[0]
+        self.step_pc()
+
+    def op_ldwn(self, args: list[int]):
+        addr = tc_sub(self.reg[args[1]], tc_b16_to_b32(args[2]))
+        word = self.mem[addr : addr - WORD_SIZE : -1]
+        self.reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
+        self.step_pc()
+
     def op_stbn(self, args: list[int]):
-        addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
+        addr = tc_sub(self.reg[args[1]], tc_b16_to_b32(args[2]))
         self.mem[addr - 0] = self.reg[args[0]] & 0xff
+        self.step_pc()
+
+    def op_stsn(self, args: list[int]):
+        addr = tc_sub(self.reg[args[1]], tc_b16_to_b32(args[2]))
+        self.mem[addr - 0] = self.reg[args[0]] & 0xff
+        self.mem[addr - 1] = (self.reg[args[0]] >> 8) & 0xff
+        self.step_pc()
+
+    def op_stwn(self, args: list[int]):
+        addr = tc_sub(self.reg[args[1]], tc_b16_to_b32(args[2]))
+        self.mem[addr - 0] = self.reg[args[0]] & 0xff
+        self.mem[addr - 1] = (self.reg[args[0]] >> 8) & 0xff
+        self.mem[addr - 2] = (self.reg[args[0]] >> 16) & 0xff
+        self.mem[addr - 3] = (self.reg[args[0]] >> 24) & 0xff
         self.step_pc()
 
     def op_ldbr(self, args: list[int]):
@@ -701,50 +742,23 @@ List of commands:
         self.reg[args[0]] = word[0]
         self.step_pc()
 
-    def op_stbr(self, args: list[int]):
-        self.mem[self.reg[args[1]] - 0] = self.reg[args[0]] & 0xff
-        self.step_pc()
-
-    def op_ldsn(self, args: list[int]):
-        addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
-        word = self.mem[addr : addr - SHORT_SIZE : -1]
-        self.reg[args[0]] = word[1] << 8 | word[0]
-        self.step_pc()
-
-    def op_stsn(self, args: list[int]):
-        addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
-        self.mem[addr - 0] = self.reg[args[0]] & 0xff
-        self.mem[addr - 1] = (self.reg[args[0]] >> 8) & 0xff
-        self.step_pc()
-
     def op_ldsr(self, args: list[int]):
         word = self.mem[self.reg[args[1]] : self.reg[args[1]] - SHORT_SIZE : -1]
         self.reg[args[0]] = word[1] << 8 | word[0]
         self.step_pc()
 
-    def op_stsr(self, args: list[int]):
-        self.mem[self.reg[args[1]] - 0] = self.reg[args[0]] & 0xff
-        self.mem[self.reg[args[1]] - 1] = (self.reg[args[0]] >> 8) & 0xff
-        self.step_pc()
-
-    # TODO: make explicit in documentation that loadn* loads from offset in bytes, not words
-    def op_ldwn(self, args: list[int]):
-        addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
-        word = self.mem[addr : addr - WORD_SIZE : -1]
-        self.reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
-        self.step_pc()
-
-    def op_stwn(self, args: list[int]):
-        addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
-        self.mem[addr - 0] = self.reg[args[0]] & 0xff
-        self.mem[addr - 1] = (self.reg[args[0]] >> 8) & 0xff
-        self.mem[addr - 2] = (self.reg[args[0]] >> 16) & 0xff
-        self.mem[addr - 3] = (self.reg[args[0]] >> 24) & 0xff
-        self.step_pc()
-
     def op_ldwr(self, args: list[int]):
         word = self.mem[self.reg[args[1]] : self.reg[args[1]] - WORD_SIZE : -1]
         self.reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
+        self.step_pc()
+
+    def op_stbr(self, args: list[int]):
+        self.mem[self.reg[args[1]] - 0] = self.reg[args[0]] & 0xff
+        self.step_pc()
+
+    def op_stsr(self, args: list[int]):
+        self.mem[self.reg[args[1]] - 0] = self.reg[args[0]] & 0xff
+        self.mem[self.reg[args[1]] - 1] = (self.reg[args[0]] >> 8) & 0xff
         self.step_pc()
 
     def op_stwr(self, args: list[int]):
@@ -753,6 +767,8 @@ List of commands:
         self.mem[self.reg[args[1]] - 2] = (self.reg[args[0]] >> 16) & 0xff
         self.mem[self.reg[args[1]] - 3] = (self.reg[args[0]] >> 24) & 0xff
         self.step_pc()
+
+    # Load/store heap instruction
 
     def op_ldba(self, args: list[int]):
         byte = self.mem[args[1]]
@@ -764,13 +780,30 @@ List of commands:
         self.reg[args[0]] = short[0] << 8 | short[1]
         self.step_pc()
 
-    # TODO: should this read memory upwards or downwards?
     def op_ldwa(self, args:list[int]):
         word = self.mem[args[1] : args[1] + WORD_SIZE]
         self.reg[args[0]] = word[0] << 24 | word[1] << 16 | word[2] << 8 | word[3]
         self.step_pc()
 
-    # TODO: how to handle accidentally reading uninitialized memory
+    def op_stba(self, args: list[int]):
+        self.mem[args[1]] = args[0] & 0xff
+        self.step_pc()
+
+    def op_stsa(self, args: list[int]):
+        addr = args[1]
+        short = self.reg[args[0]]
+        self.mem[addr]     = (short >> 8) & 0xff
+        self.mem[addr + 1] = short & 0xff
+
+    def op_stwa(self, args: list[int]):
+        addr = args[1]
+        word = self.reg[args[0]]
+        self.mem[addr]     = (word >> 24) & 0xff
+        self.mem[addr + 1] = (word >> 16) & 0xff
+        self.mem[addr + 2] = (word >> 8) & 0xff
+        self.mem[addr + 3] = word & 0xff
+
+    # TODO: how to handle accidentally reading uninitialized memory?
     def op_unimp(self, _):
         sys.exit(f"Error: operation {bin_to_opcode[self.ir >> 24]} unimplemented")
 
@@ -970,8 +1003,8 @@ class Parser:
                     if self.labels[args[i]] >= instruction_number:
                         sys.exit(f"Error {self.inFile}@{lineno}: missing instruction after label '{args[i]}'")
                 elif c == "a":
-                    if not self.valid_variable(args[i]):
-                        sys.exit(f"Error {self.inFile}@{lineno}: invalid variable '{args[i]}'")
+                    if not self.valid_variable(args[i]) and not self.valid_address(args[i]):
+                        sys.exit(f"Error {self.inFile}@{lineno}: invalid address '{args[i]}'")
 
             # Append valid tuple.
             tuples.append((opcode, *args))
@@ -1023,10 +1056,16 @@ class Parser:
                     byte_list[curr_byte - 1] = val >> 8
                     curr_byte -= 2
                 elif c == "a":
-                    val = tc_int_to_b16(DATA_START + self.data_ids[args[i]][2])
-                    byte_list[curr_byte] = val & 0xff
-                    byte_list[curr_byte - 1] = val >> 8
-                    curr_byte -= 2
+                    if self.valid_variable(args[i]):
+                        val = tc_int_to_b16(DATA_START + self.data_ids[args[i]][2])
+                        byte_list[curr_byte] = val & 0xff
+                        byte_list[curr_byte - 1] = val >> 8
+                        curr_byte -= 2
+                    else:
+                        val = tc_int_to_b16(int(args[i]))
+                        byte_list[curr_byte] = val & 0xff
+                        byte_list[curr_byte - 1] = val >> 8
+                        curr_byte -= 2
 
                 i -= 1
 
@@ -1038,6 +1077,13 @@ class Parser:
 
     def valid_variable(self, variable: str) -> bool:
         return variable in self.data_ids.keys()
+
+    def valid_address(self, address: str) -> bool:
+        try:
+            addr = int(address)
+            return 0 <= addr and addr <= STACK_MAX
+        except ValueError:
+            return False
 
 # Two's complement helper functions
 
