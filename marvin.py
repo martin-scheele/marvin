@@ -49,6 +49,10 @@ opcode_to_bin = {
     "ldba":   0b01110000, "ldsa":   0b01110001, "ldwa":   0b01110010,
     "stba":   0b01110011, "stsa":   0b01110100, "stwa":   0b01110101,
     # array instructions
+    "anewi":  0b10000000, # rX = address,              N = length
+    "alen":   0b10000001, # rx = dest,   rY = address
+    "aldi":   0b10000010, # rX = dest,   rY = address, rZ = index
+    "asti":   0b10000011, # rX = src,    rY = address, rZ = index
 }
 
 # Maps 8-bit binary codes to the opcodes they represent.
@@ -84,8 +88,12 @@ opcode_to_argmask = {
     "ldwn":   "rrn", "stwn":   "rrn", "ldwr":   "rr",  "stwr":  "rr",
     # load/store heap instructions
     "ldba":   "ra",  "ldsa":   "ra",  "ldwa":   "ra",
-    "stba":   "ra",  "stsa":   "ra",  "stwa":   "ra"
+    "stba":   "ra",  "stsa":   "ra",  "stwa":   "ra",
     # array instructions
+    "anewi": "rn",
+    "alen":  "rr",
+    "aldi":  "rrr",
+    "asti":  "rrr"
 }
 
 # Maps register names to their binary 4-bit codes.
@@ -320,7 +328,6 @@ class CPU:
                         continue
                 elif args[0] in {"program", "p"}:
                     self.print_program()
-
             elif cmd == "q" or cmd == "quit":
                 self.debug = False
                 return
@@ -370,7 +377,7 @@ List of commands:
                     print(f">{pc :>3} {line :<30}", end="")
                 else:
                     print(f"{pc :>4} {line :<30}", end="")
-                print(" ".join([format(b, "08b") for b in self.mem[i:i+4]]))
+                print(" ".join([format(b, "08b") for b in self.mem[pc * 4:pc * 4 + 4]]))
             else:
                 print(line)
         print()
@@ -791,6 +798,7 @@ List of commands:
         short = self.reg[args[0]]
         self.mem[addr]     = (short >> 8) & 0xff
         self.mem[addr + 1] = short & 0xff
+        self.step_pc()
 
     def op_stwa(self, args: list[int]):
         addr = args[1]
@@ -799,11 +807,56 @@ List of commands:
         self.mem[addr + 1] = (word >> 16) & 0xff
         self.mem[addr + 2] = (word >> 8) & 0xff
         self.mem[addr + 3] = word & 0xff
+        self.step_pc()
 
-    # TODO: how to handle accidentally reading uninitialized memory?
-    def op_unimp(self, _):
-        sys.exit(f"Error: operation {bin_to_opcode[self.ir >> 24]} unimplemented")
+    # array instructions
 
+    # rX = address, N = length
+    def op_anewi(self, args: list[int]):
+        len = tc_b16_to_int(args[1])
+        addr = self.reg[args[0]]
+        self.mem[addr] = (len >> 8) & 0xff
+        self.mem[addr + 1] = len & 0xff
+        for i in range(2, 2 + len):
+            self.mem[addr + i] = 0
+        self.step_pc()
+
+    # rX = dest, rY = addr
+    def op_alen(self, args: list[int]):
+        addr = self.reg[args[1]]
+        short = self.mem[addr : addr + SHORT_SIZE]
+        len = short[0] << 8 | short[1]
+        self.reg[args[0]] = len
+        self.step_pc()
+
+    # rX = dest, rY = addr, rZ = index
+    def op_aldi(self, args: list[int]):
+        addr = self.reg[args[1]]
+        short = self.mem[addr : addr + SHORT_SIZE]
+        len = short[0] << 8 | short[1]
+        index = tc_b16_to_int(self.reg[args[2]])
+        if index > len - 1:
+            sys.exit(f"Error: out of bounds array access at instruction {self.pc // WORD_SIZE}; halting the machine")
+        addr_w_offset = addr + 2 + index * WORD_SIZE
+        num = self.mem[addr_w_offset : addr_w_offset + WORD_SIZE]
+        self.reg[args[0]] = num[0] << 24 | num[1] << 16 | num[2] << 8 | num[3]
+        self.step_pc()
+
+    # rx = source, ry = addr, rZ = index
+    def op_asti(self, args: list[int]):
+        addr = self.reg[args[1]]
+        short = self.mem[addr : addr + SHORT_SIZE]
+        len = short[0] << 8 | short[1]
+        index = tc_b16_to_int(self.reg[args[2]])
+        if index > len - 1:
+            sys.exit(f"Error: out of bounds array access at instruction {self.pc // WORD_SIZE}; halting the machine")
+        addr_w_offset = addr + SHORT_SIZE + index * WORD_SIZE
+        source_val = self.reg[args[0]]
+        self.mem[addr_w_offset] = (source_val >> 24) & 0xff
+        self.mem[addr_w_offset + 1] = (source_val >> 16) & 0xff
+        self.mem[addr_w_offset + 2] = (source_val >> 8) & 0xff
+        self.mem[addr_w_offset + 3] = source_val & 0xff
+        self.step_pc()
 
 class Parser:
     def __init__(self, inFile: str):
