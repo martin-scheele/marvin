@@ -1,5 +1,5 @@
 .data
-    .int i = 69 
+    .int i = 69
     .char c = a
     .float f = 42.0
     .byte b = 30
@@ -7,10 +7,14 @@
 label:
     ldwa   r0 i
     stwa   r0 9000
+    writei r0
     ldsa   r0 c
     stsa   r0 9100
+    writec r0
     ldwa   r0 f
     stwa   r0 9200
+    writef r0
     ldba   r0 b
     stba   r0 9300
+    writei r0
     halt

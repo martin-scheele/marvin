@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import datetime
 import os
 import random
+import shlex
 import struct
 import sys
 
@@ -47,10 +48,10 @@ opcode_to_bin = {
     "ldba":   0b01110000, "ldsa":   0b01110001, "ldwa":   0b01110010,
     "stba":   0b01110011, "stsa":   0b01110100, "stwa":   0b01110101,
     # array instructions
-    "aneww":  0b10000000, # rX = address,              N = length
-    "alen":   0b10000001, # rx = dest,   rY = address
-    "aldw":   0b10000010, # rX = dest,   rY = address, rZ = index
-    "astw":   0b10000011, # rX = src,    rY = address, rZ = index
+    "anewb":  0b10000000, "anews":  0b10000001, "aneww":  0b10000010,
+    "aldb":   0b10000011, "alds":   0b10000100, "aldw":   0b10000101,
+    "astb":   0b10000110, "asts":   0b10000111, "astw":   0b10001000,
+    "alen":   0b10001001,
 }
 
 # Maps 8-bit binary codes to the opcodes they represent.
@@ -74,7 +75,7 @@ opcode_to_argmask = {
     "jge":    "rrl", "jle":    "rrl", "jeq":    "rrl", "jne":   "rrl",
     "jgt":    "rrl", "jlt":    "rrl", "jsr":    "rl",
     # register instructions
-    "seti":   "rn",  "inci":   "rn",  "setf":   "rf",  "incf":  "rf",
+    "seti":   "ra",  "inci":   "rn",  "setf":   "rf",  "incf":  "rf",
     "copy":   "rr",
     # stack insructions
     "pushb":  "rr",  "popb":   "rr",
@@ -88,10 +89,10 @@ opcode_to_argmask = {
     "ldba":   "ra",  "ldsa":   "ra",  "ldwa":   "ra",
     "stba":   "ra",  "stsa":   "ra",  "stwa":   "ra",
     # array instructions
-    "aneww": "rn",
-    "alen":  "rr",
-    "aldw":  "rrr",
-    "astw":  "rrr"
+    "anewb":  "rn",  "anews":  "rn",  "aneww":  "rn",
+    "aldb":   "rrr", "alds":   "rrr", "aldw":   "rrr",
+    "astb":   "rrr", "asts":   "rrr", "astw":   "rrr",
+    "alen":   "rr",
 }
 
 # Maps register names to their binary 4-bit codes.
@@ -144,7 +145,7 @@ class Program:
     machine_code: list[tuple[int, int, int, int]]
     lines: list[str]
     labels: dict[str, int]
-    data_ids: dict[str, tuple[str, int, int]]
+    data_ids: dict[str, tuple[str, list[int], int]]
     pc_to_abs_line: dict[int, int]
     abs_to_pc_line: dict[int, int]
 
@@ -177,23 +178,32 @@ class CPU:
 
         # Load the data section variables into memory at the start of the heap.
         heap_offset = 0
-        for data_type, data_val, data_offset in self.program.data_ids.values():
+        for data_type, data_vals, data_offset in self.program.data_ids.values():
             if data_type in [".byte"]:
+                data_val = data_vals[0]
                 self.mem[DATA_START + data_offset] = data_val & 0xff
                 heap_offset += 1
             elif data_type in [".short", ".char"]:
+                data_val = data_vals[0]
                 self.mem[DATA_START + data_offset + 0] = (data_val >> 8) & 0xff
                 self.mem[DATA_START + data_offset + 1] = data_val & 0xff
                 heap_offset += 2
             elif data_type in [".int", ".float"]:
+                data_val = data_vals[0]
                 self.mem[DATA_START + data_offset + 0] = data_val >> 24
                 self.mem[DATA_START + data_offset + 1] = (data_val >> 16) & 0xff
                 self.mem[DATA_START + data_offset + 2] = (data_val >> 8) & 0xff
                 self.mem[DATA_START + data_offset + 3] = data_val & 0xff
                 heap_offset += 4
             elif data_type in [".string"]:
-                # TODO: string support
-                pass
+                chars = data_vals
+                length = len(chars)
+                self.mem[DATA_START + data_offset + 0] = (length >> 8) & 0xff
+                self.mem[DATA_START + data_offset + 1] = length & 0xff
+                for i in range(length):
+                    self.mem[DATA_START + data_offset + 2 + i * 2 + 0] = (chars[i] >> 8) & 0xff
+                    self.mem[DATA_START + data_offset + 2 + i * 2 + 1] = chars[i] & 0xff
+                heap_offset += (SHORT_SIZE + length * SHORT_SIZE)
 
         # Initialize the frame, stack, and global pointers
         self.reg[reg_to_bin["fp"]] = self.reg[reg_to_bin["sp"]] = STACK_MAX
@@ -447,7 +457,7 @@ List of commands:
 
     def op_writec(self, args: list[int]):
         # TODO: how to handle value outside of range? clamp?
-        print(self.reg[args[0]].to_bytes(2, 'big').decode("utf-16-be"))
+        print(self.reg[args[0]].to_bytes(2, 'big').decode("utf-16-be"), end="")
         self.step_pc()
 
     def op_seed(self, args: list[int]):
@@ -809,22 +819,56 @@ List of commands:
 
     # array instructions
 
+    def op_anewb(self, args: list[int]):
+        len = tc_b16_to_int(args[1])
+        addr = self.reg[args[0]]
+        self.mem[addr] = (len >> 8) & 0xff
+        self.mem[addr + 1] = len & 0xff
+        for i in range(2, 2 + len * BYTE_SIZE):
+            self.mem[addr + i] = 0
+        self.step_pc()
+
+    def op_anews(self, args: list[int]):
+        len = tc_b16_to_int(args[1])
+        addr = self.reg[args[0]]
+        self.mem[addr] = (len >> 8) & 0xff
+        self.mem[addr + 1] = len & 0xff
+        for i in range(2, 2 + len * SHORT_SIZE):
+            self.mem[addr + i] = 0
+        self.step_pc()
+
     # rX = address, N = length
     def op_aneww(self, args: list[int]):
         len = tc_b16_to_int(args[1])
         addr = self.reg[args[0]]
         self.mem[addr] = (len >> 8) & 0xff
         self.mem[addr + 1] = len & 0xff
-        for i in range(2, 2 + len):
+        for i in range(2, 2 + len * WORD_SIZE):
             self.mem[addr + i] = 0
         self.step_pc()
 
-    # rX = dest, rY = addr
-    def op_alen(self, args: list[int]):
+    def op_aldb(self, args: list[int]):
         addr = self.reg[args[1]]
         short = self.mem[addr : addr + SHORT_SIZE]
         len = short[0] << 8 | short[1]
-        self.reg[args[0]] = len
+        index = tc_b16_to_int(self.reg[args[2]])
+        if index > len - 1:
+            sys.exit(f"Error: out of bounds array access at instruction {self.pc // WORD_SIZE}; halting the machine")
+        addr_w_offset = addr + 2 + index * BYTE_SIZE
+        num = self.mem[addr_w_offset : addr_w_offset + BYTE_SIZE]
+        self.reg[args[0]] = num[0]
+        self.step_pc()
+
+    def op_alds(self, args: list[int]):
+        addr = self.reg[args[1]]
+        short = self.mem[addr : addr + SHORT_SIZE]
+        len = short[0] << 8 | short[1]
+        index = tc_b16_to_int(self.reg[args[2]])
+        if index > len - 1:
+            sys.exit(f"Error: out of bounds array access at instruction {self.pc // WORD_SIZE}; halting the machine")
+        addr_w_offset = addr + 2 + index * SHORT_SIZE
+        num = self.mem[addr_w_offset : addr_w_offset + SHORT_SIZE]
+        self.reg[args[0]] = num[0] << 8 | num[1]
         self.step_pc()
 
     # rX = dest, rY = addr, rZ = index
@@ -838,6 +882,31 @@ List of commands:
         addr_w_offset = addr + 2 + index * WORD_SIZE
         num = self.mem[addr_w_offset : addr_w_offset + WORD_SIZE]
         self.reg[args[0]] = num[0] << 24 | num[1] << 16 | num[2] << 8 | num[3]
+        self.step_pc()
+
+    def op_astb(self, args: list[int]):
+        addr = self.reg[args[1]]
+        short = self.mem[addr : addr + SHORT_SIZE]
+        len = short[0] << 8 | short[1]
+        index = tc_b16_to_int(self.reg[args[2]])
+        if index > len - 1:
+            sys.exit(f"Error: out of bounds array access at instruction {self.pc // WORD_SIZE}; halting the machine")
+        addr_w_offset = addr + SHORT_SIZE + index * BYTE_SIZE
+        source_val = self.reg[args[0]]
+        self.mem[addr_w_offset] = source_val & 0xff
+        self.step_pc()
+
+    def op_asts(self, args: list[int]):
+        addr = self.reg[args[1]]
+        short = self.mem[addr : addr + SHORT_SIZE]
+        len = short[0] << 8 | short[1]
+        index = tc_b16_to_int(self.reg[args[2]])
+        if index > len - 1:
+            sys.exit(f"Error: out of bounds array access at instruction {self.pc // WORD_SIZE}; halting the machine")
+        addr_w_offset = addr + SHORT_SIZE + index * SHORT_SIZE
+        source_val = self.reg[args[0]]
+        self.mem[addr_w_offset] = (source_val >> 8) & 0xff
+        self.mem[addr_w_offset + 1] = source_val & 0xff
         self.step_pc()
 
     # rx = source, ry = addr, rZ = index
@@ -856,6 +925,15 @@ List of commands:
         self.mem[addr_w_offset + 3] = source_val & 0xff
         self.step_pc()
 
+    # rX = dest, rY = addr
+    def op_alen(self, args: list[int]):
+        addr = self.reg[args[1]]
+        short = self.mem[addr : addr + SHORT_SIZE]
+        len = short[0] << 8 | short[1]
+        self.reg[args[0]] = len
+        self.step_pc()
+
+
 class Parser:
     def __init__(self, inFile: str):
         self.inFile: str = inFile
@@ -866,7 +944,7 @@ class Parser:
 
         self.machine_code: list[tuple[int, int, int, int]] = []
         self.labels: dict[str, int] = {}
-        self.data_ids: dict[str, tuple[str, int, int]] = {}
+        self.data_ids: dict[str, tuple[str, list[int], int]] = {}
 
     def parse(self) -> Program:
         tokens = self._tokenize()
@@ -935,7 +1013,8 @@ class Parser:
                 self.labels[label] = instruction_number - 1
                 continue
 
-            instruction_number += 1
+            if text_found:
+                instruction_number += 1
 
         if not text_start:
             # TODO: is this descriptive enough?
@@ -953,7 +1032,7 @@ class Parser:
 
         # Validate data section.
         for line in lines[data_start:data_end]:
-            line = line.strip().lower()
+            line = line.strip()
             lineno = data_start + 1
 
             # Skip empty lines, comments, and self.labels.
@@ -964,7 +1043,7 @@ class Parser:
             if "#" in line:
                 line = line[:line.find("#")].strip()
 
-            toks = line.split()
+            toks = shlex.split(line)
 
             if len(toks) != 4:
                 sys.exit(f"Error {self.inFile}@{lineno}: invalid number of tokens '{toks[0]}'")
@@ -980,12 +1059,12 @@ class Parser:
 
             if toks[0] in [".byte", ".short", ".int"]:
                 if is_int(toks[3]):
-                    self.data_ids[toks[1]] = (toks[0], tc_int_to_b32(int(toks[3])), data_offset)
+                    self.data_ids[toks[1]] = (toks[0], [tc_int_to_b32(int(toks[3]))], data_offset)
                     # TODO: change this for varying width types
                     data_offset += 4
             elif toks[0] == ".float":
                 if is_float(toks[3]):
-                    self.data_ids[toks[1]] = (toks[0], fp_float_to_f32(float(toks[3])), data_offset)
+                    self.data_ids[toks[1]] = (toks[0], [fp_float_to_f32(float(toks[3]))], data_offset)
                     data_offset += 4
             elif toks[0] == ".char":
                 # TODO: require quotes?
@@ -993,11 +1072,18 @@ class Parser:
                 ch = byte_list[0] << 8 | byte_list[1]
                 if len(byte_list) != 2:
                     sys.exit(f"Error {self.inFile}@{lineno}: invalid unicode character '{toks[3]}'")
-                self.data_ids[toks[1]] = (toks[0], ch, data_offset)
+                self.data_ids[toks[1]] = (toks[0], [ch], data_offset)
                 data_offset += 2
             elif toks[0] == ".string":
-                # TODO: implement strings
-                sys.exit(f"Error {self.inFile}@{lineno}: unimplemented type '{toks[0]}'")
+                string = toks[3]
+                string = string.replace(r"\n", "\n")
+                chars: list[int] = []
+                for c in list(string):
+                    byte_list = list(c.encode("utf-16-be"))
+                    ch = byte_list[0] << 8 | byte_list[1]
+                    chars.append(ch)
+                self.data_ids[toks[1]] = (toks[0], chars, data_offset)
+                data_offset += len(toks[3]) * SHORT_SIZE
 
         pc_line = 0
         abs_line = 0

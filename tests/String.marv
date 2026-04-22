@@ -1,0 +1,13 @@
+.data
+    .string msg = "Hello, world!\n"
+.text
+    seti   r0 msg       # store address of msg
+    alen   r1 r0        # r0 = len(msg)
+    seti   r2 0         # index = 0
+print:
+    alds   r3 r0 r2     # r3 = msg[r2]
+    writec r3           # print(r3)
+    inci   r2 1         # r2 += 1
+    jlt    r2 r1 print  # if index != len, loop
+print_end:
+    halt                # stop the program
