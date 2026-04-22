@@ -43,16 +43,14 @@ opcode_to_bin = {
     # load/store stack instructions
     "ldbn":   0b01100000, "ldsn":   0b01100001, "ldwn":   0b01100010,
     "stbn":   0b01100011, "stsn":   0b01100100, "stwn":   0b01100101,
-    "ldbr":   0b01100110, "ldsr":   0b01100111, "ldwr":   0b01101000,
-    "stbr":   0b01101001, "stsr":   0b01101010, "stwr":   0b01101011,
     # load/store heap instructions
     "ldba":   0b01110000, "ldsa":   0b01110001, "ldwa":   0b01110010,
     "stba":   0b01110011, "stsa":   0b01110100, "stwa":   0b01110101,
     # array instructions
-    "anewi":  0b10000000, # rX = address,              N = length
+    "aneww":  0b10000000, # rX = address,              N = length
     "alen":   0b10000001, # rx = dest,   rY = address
-    "aldi":   0b10000010, # rX = dest,   rY = address, rZ = index
-    "asti":   0b10000011, # rX = src,    rY = address, rZ = index
+    "aldw":   0b10000010, # rX = dest,   rY = address, rZ = index
+    "astw":   0b10000011, # rX = src,    rY = address, rZ = index
 }
 
 # Maps 8-bit binary codes to the opcodes they represent.
@@ -83,17 +81,17 @@ opcode_to_argmask = {
     "pushs":  "rr",  "pops":   "rr",
     "pushw":  "rr",  "popw":   "rr",
     # load/store stack instructions
-    "ldbn":   "rrn", "stbn":   "rrn", "ldbr":   "rr",  "stbr":  "rr",
-    "ldsn":   "rrn", "stsn":   "rrn", "ldsr":   "rr",  "stsr":  "rr",
-    "ldwn":   "rrn", "stwn":   "rrn", "ldwr":   "rr",  "stwr":  "rr",
+    "ldbn":   "rrn", "stbn":   "rrn",
+    "ldsn":   "rrn", "stsn":   "rrn",
+    "ldwn":   "rrn", "stwn":   "rrn",
     # load/store heap instructions
     "ldba":   "ra",  "ldsa":   "ra",  "ldwa":   "ra",
     "stba":   "ra",  "stsa":   "ra",  "stwa":   "ra",
     # array instructions
-    "anewi": "rn",
+    "aneww": "rn",
     "alen":  "rr",
-    "aldi":  "rrr",
-    "asti":  "rrr"
+    "aldw":  "rrr",
+    "astw":  "rrr"
 }
 
 # Maps register names to their binary 4-bit codes.
@@ -705,36 +703,36 @@ List of commands:
     # TODO: change from addr : addr - ? to addr - ? + 1 : addr + 1 ?
     # - to avoid case where addr - ? is -1 and last byte gets cut off
     def op_ldbn(self, args: list[int]):
-        addr = tc_sub(self.reg[args[1]], tc_b16_to_b32(args[2]))
+        addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
         word = self.mem[addr : addr - BYTE_SIZE : -1]
         self.reg[args[0]] = word[0]
         self.step_pc()
 
     def op_ldsn(self, args: list[int]):
-        addr = tc_sub(self.reg[args[1]], tc_b16_to_b32(args[2]))
+        addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
         word = self.mem[addr : addr - SHORT_SIZE : -1]
         self.reg[args[0]] = word[1] << 8 | word[0]
         self.step_pc()
 
     def op_ldwn(self, args: list[int]):
-        addr = tc_sub(self.reg[args[1]], tc_b16_to_b32(args[2]))
+        addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
         word = self.mem[addr : addr - WORD_SIZE : -1]
         self.reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
         self.step_pc()
 
     def op_stbn(self, args: list[int]):
-        addr = tc_sub(self.reg[args[1]], tc_b16_to_b32(args[2]))
+        addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
         self.mem[addr - 0] = self.reg[args[0]] & 0xff
         self.step_pc()
 
     def op_stsn(self, args: list[int]):
-        addr = tc_sub(self.reg[args[1]], tc_b16_to_b32(args[2]))
+        addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
         self.mem[addr - 0] = self.reg[args[0]] & 0xff
         self.mem[addr - 1] = (self.reg[args[0]] >> 8) & 0xff
         self.step_pc()
 
     def op_stwn(self, args: list[int]):
-        addr = tc_sub(self.reg[args[1]], tc_b16_to_b32(args[2]))
+        addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
         self.mem[addr - 0] = self.reg[args[0]] & 0xff
         self.mem[addr - 1] = (self.reg[args[0]] >> 8) & 0xff
         self.mem[addr - 2] = (self.reg[args[0]] >> 16) & 0xff
@@ -812,7 +810,7 @@ List of commands:
     # array instructions
 
     # rX = address, N = length
-    def op_anewi(self, args: list[int]):
+    def op_aneww(self, args: list[int]):
         len = tc_b16_to_int(args[1])
         addr = self.reg[args[0]]
         self.mem[addr] = (len >> 8) & 0xff
@@ -830,7 +828,7 @@ List of commands:
         self.step_pc()
 
     # rX = dest, rY = addr, rZ = index
-    def op_aldi(self, args: list[int]):
+    def op_aldw(self, args: list[int]):
         addr = self.reg[args[1]]
         short = self.mem[addr : addr + SHORT_SIZE]
         len = short[0] << 8 | short[1]
@@ -843,7 +841,7 @@ List of commands:
         self.step_pc()
 
     # rx = source, ry = addr, rZ = index
-    def op_asti(self, args: list[int]):
+    def op_astw(self, args: list[int]):
         addr = self.reg[args[1]]
         short = self.mem[addr : addr + SHORT_SIZE]
         len = short[0] << 8 | short[1]

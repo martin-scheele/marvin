@@ -234,18 +234,12 @@ Opcode & 32-bit Machine Code & Description \brule
 \begin{tabularx}{\columnwidth}{lll}
 Opcode & 32-bit Machine Code & Description \brule 
 % TODO: descriptions
-\code{ldbn rX rY N}  & \code{01100000 XXXXYYYY NNNNNNNN NNNNNNNN} & sets \code{rX = mem[rY - N]}, ... \grule
-\code{ldsn rX rY N}  & \code{01100001 XXXXYYYY NNNNNNNN NNNNNNNN} & sets \code{rX = mem[rY - N : rY - N - 2]}, ... \grule
-\code{ldwn rX rY N}  & \code{01100010 XXXXYYYY NNNNNNNN NNNNNNNN} & sets \code{rX = mem[rY - N : rY - N - 4]}, ... \grule
-\code{stbn rX rY N}  & \code{01100011 XXXXYYYY NNNNNNNN NNNNNNNN} & sets \code{mem[rY - N] = rX}, ... \grule
-\code{stsn rX rY N}  & \code{01100100 XXXXYYYY NNNNNNNN NNNNNNNN} & sets \code{mem[rY - N : rY - N - 2] = rX}, ... \grule
-\code{stwn rX rY N}  & \code{01100101 XXXXYYYY NNNNNNNN NNNNNNNN} & sets \code{mem[rY - N : rY - N - 4] = rX}, ... \grule
-\code{ldbr rX rY}    & \code{01100110 00000000 00000000 XXXXYYYY} & sets \code{rX = mem[rY]}, ... \grule
-\code{ldsr rX rY}    & \code{01100111 00000000 00000000 XXXXYYYY} & sets \code{rX = mem[rY : rY - 2]}, ... \grule
-\code{ldwr rX rY}    & \code{01101000 00000000 00000000 XXXXYYYY} & sets \code{rX = mem[rY : rY - 4]}, ...\grule
-\code{stbr rX rY}    & \code{01101001 00000000 00000000 XXXXYYYY} & sets \code{mem[rY] = rX}, ... \grule
-\code{stsr rX rY}    & \code{01101010 00000000 00000000 XXXXYYYY} & sets \code{mem[rY : rY - 2] = rX}, ...\grule
-\code{stwr rX rY}    & \code{01101011 00000000 00000000 XXXXYYYY} & sets \code{mem[rY : rY - 4] = rX}, ...
+\code{ldbn rX rY N}  & \code{01100000 XXXXYYYY NNNNNNNN NNNNNNNN} & sets \code{rX = mem[rY + N]}, ... \grule
+\code{ldsn rX rY N}  & \code{01100001 XXXXYYYY NNNNNNNN NNNNNNNN} & sets \code{rX = mem[rY + N : rY + N - 2]}, ... \grule
+\code{ldwn rX rY N}  & \code{01100010 XXXXYYYY NNNNNNNN NNNNNNNN} & sets \code{rX = mem[rY + N : rY + N - 4]}, ... \grule
+\code{stbn rX rY N}  & \code{01100011 XXXXYYYY NNNNNNNN NNNNNNNN} & sets \code{mem[rY + N] = rX}, ... \grule
+\code{stsn rX rY N}  & \code{01100100 XXXXYYYY NNNNNNNN NNNNNNNN} & sets \code{mem[rY + N : rY + N - 2] = rX}, ... \grule
+\code{stwn rX rY N}  & \code{01100101 XXXXYYYY NNNNNNNN NNNNNNNN} & sets \code{mem[rY + N : rY + N - 4] = rX}, ...
 \end{tabularx}
 \end{boundedbox}
 

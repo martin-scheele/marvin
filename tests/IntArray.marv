@@ -1,13 +1,13 @@
 .text
 setup:
     seti r0 4           # len = 4
-    anewi gp 4          # init array to len 4
+    aneww gp 4          # init array to len 4
     copy r1 gp          # r1 = addr
     inci gp 18          # increment gp
     seti r2 0           # index = 0
 init:
     jeqz r0 end_init    # if i == 0, end loop
-    asti r2 r1 r2       # addr[index] = index
+    astw r2 r1 r2       # addr[index] = index
     inci r2 1           # index += 1
     inci r0 -1          # i -= 1
     jump init           # continue loop
@@ -16,7 +16,7 @@ end_init:
     seti r2 0           # index = 0
 print:
     jeqz r0 end_print   # if r0 == 0, end loop
-    aldi r3 r1 r2       # val = addr[index]
+    aldw r3 r1 r2       # val = addr[index]
     writei r3           # print val
     inci r2 1           # index += 1
     inci r0 -1          # i -= 1
