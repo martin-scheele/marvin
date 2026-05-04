@@ -2,6 +2,7 @@
 pythonVersion = "3.14"
 reportExplicitAny = false
 reportAny = false
+reportUnannotatedClassAttribute = false
 
 [tool.ruff]
 line-length = 120
