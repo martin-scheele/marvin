@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 from dataclasses import dataclass
 import datetime
@@ -121,11 +123,14 @@ def main():
     _ = parser.add_argument("filename", help="input .marv file")
     _ = parser.add_argument("-d", "--debug",   action="store_true", help="enable debug mode")
     _ = parser.add_argument("-c", "--count",   action="store_true", help="count instruction calls")
+    # TODO: consider using nargs="*" or argparse.REMAINDER
+    _ = parser.add_argument("-a", "--args",    nargs="+",           help="pass cli arguments")
     args = parser.parse_args()
 
     inFile = args.filename
     debug = args.debug
     count_calls = args.count
+    cli_args: list[str] = args.args
 
     if not inFile.endswith(".marv") or not os.path.exists(inFile):
         sys.exit(f"Error: invalid file '{inFile}'")
@@ -137,7 +142,7 @@ def main():
     if not program.machine_code:
         sys.exit()
 
-    cpu = CPU(program, debug, count_calls)
+    cpu = CPU(program, debug, count_calls, cli_args)
     cpu.run()
 
 @dataclass
@@ -153,15 +158,16 @@ WORD_SIZE  = 4
 SHORT_SIZE = 2
 BYTE_SIZE  = 1
 
-STACK_MAX = 65535
+STACK_START = 65535
 HEAP_START = 8192
 DATA_START = HEAP_START
 
 class CPU:
-    def __init__(self, program: Program, debug: bool, count_calls: bool):
+    def __init__(self, program: Program, debug: bool, count_calls: bool, cli_args: list[str]):
         self.program: Program = program
         self.debug: bool = debug
         self.count_calls: bool = count_calls
+        self.cli_args = cli_args
 
         self.reg: list[int] = [0] * 16
         self.mem: list[int] = [0] * 65536
@@ -176,50 +182,74 @@ class CPU:
             for b in range(4):
                 self.mem[i * 4 + b] = v[b]
 
-        # Load the data section variables into memory at the start of the heap.
         heap_offset = 0
+
+        # Load the data section variables into memory at the start of the heap.
         for data_type, data_vals, data_offset in self.program.data_ids.values():
             if data_type in [".byte"]:
                 data_val = data_vals[0]
-                self.mem[DATA_START + data_offset] = data_val & 0xff
+                self.store_byte(DATA_START + data_offset, data_val)
                 heap_offset += 1
             elif data_type in [".short", ".char"]:
                 data_val = data_vals[0]
-                self.mem[DATA_START + data_offset + 0] = (data_val >> 8) & 0xff
-                self.mem[DATA_START + data_offset + 1] = data_val & 0xff
+                self.store_short(DATA_START + data_offset, data_val)
                 heap_offset += 2
             elif data_type in [".int", ".float"]:
                 data_val = data_vals[0]
-                self.mem[DATA_START + data_offset + 0] = data_val >> 24
-                self.mem[DATA_START + data_offset + 1] = (data_val >> 16) & 0xff
-                self.mem[DATA_START + data_offset + 2] = (data_val >> 8) & 0xff
-                self.mem[DATA_START + data_offset + 3] = data_val & 0xff
+                self.store_word(DATA_START + data_offset, data_val)
                 heap_offset += 4
             elif data_type in [".string"]:
-                chars = data_vals
-                length = len(chars)
-                self.mem[DATA_START + data_offset + 0] = (length >> 8) & 0xff
-                self.mem[DATA_START + data_offset + 1] = length & 0xff
-                for i in range(length):
-                    self.mem[DATA_START + data_offset + 2 + i * 2 + 0] = (chars[i] >> 8) & 0xff
-                    self.mem[DATA_START + data_offset + 2 + i * 2 + 1] = chars[i] & 0xff
-                heap_offset += (SHORT_SIZE + length * SHORT_SIZE)
+                utf16_chars = data_vals
+                arglen = len(utf16_chars)
+                self.store_short(DATA_START + data_offset, arglen)
+                for i in range(arglen):
+                    addr = DATA_START + data_offset + 2 + i * 2
+                    self.store_short(addr, utf16_chars[i])
+                heap_offset += (SHORT_SIZE + arglen * SHORT_SIZE)
+
+        if cli_args:
+            # Store argc
+            argc = len(cli_args)
+            self.store_short(DATA_START + heap_offset, argc)
+            heap_offset += SHORT_SIZE
+
+            # Start argv array
+            self.store_short(DATA_START + heap_offset, argc)
+            argv_addr = DATA_START + heap_offset
+            heap_offset += SHORT_SIZE
+
+            # Store argv addrs + cli args arrays
+            cli_args_arrays_start = DATA_START + heap_offset + SHORT_SIZE * argc
+            cli_arg_addr = cli_args_arrays_start
+            heap_offset += SHORT_SIZE * argc
+            for i, arg in enumerate(cli_args):
+                arg = arg.replace(r"\n", "\n")
+                self.store_short(argv_addr + SHORT_SIZE + SHORT_SIZE * i, cli_arg_addr)
+                arglen = len(arg)
+                self.store_short(cli_arg_addr, arglen)
+                heap_offset += SHORT_SIZE
+                for char in list(arg):
+                    utf16_bytes = list(char.encode("utf-16-be"))
+                    utf16_char = utf16_bytes[0] << 8 | utf16_bytes[1]
+                    self.store_short(DATA_START + heap_offset, utf16_char)
+                    heap_offset += SHORT_SIZE
+                cli_arg_addr = DATA_START + heap_offset
+        else:
+            self.store_short(DATA_START + heap_offset, 0)
+            heap_offset += SHORT_SIZE
+            self.store_short(DATA_START + heap_offset, 0)
+            heap_offset += SHORT_SIZE
 
         # Initialize the frame, stack, and global pointers
-        self.reg[reg_to_bin["fp"]] = self.reg[reg_to_bin["sp"]] = STACK_MAX
+        self.reg[reg_to_bin["fp"]] = self.reg[reg_to_bin["sp"]] = STACK_START
         self.reg[reg_to_bin["gp"]] = DATA_START + heap_offset
 
     def run(self):
         while True:
             try:
-                self.ir = (
-                      self.mem[self.pc]     << 24
-                    | self.mem[self.pc + 1] << 16
-                    | self.mem[self.pc + 2] << 8
-                    | self.mem[self.pc + 3]
-                )
+                self.ir = self.load_word(self.pc)
             except IndexError:
-                sys.exit(f"Error: attempted to execute instruction {self.pc // WORD_SIZE}; halting the machine")
+                sys.exit(f"Error: attempted to execute instruction {self.get_instruction()}; halting the machine")
 
             self.debug_exec()
 
@@ -237,12 +267,12 @@ class CPU:
     def debug_exec(self):
         if not self.debug:
             return
-        if self.pc // 4 in self.breakpoints:
+        if self.get_instruction() in self.breakpoints:
             pass
         elif self.debug_continue_flag:
             return
 
-        print(f"{self.pc // 4} {self.program.lines[self.program.pc_to_abs_line[self.pc // 4]]}", end="\n\n")
+        print(f"{self.get_instruction()} {self.program.lines[self.program.pc_to_abs_line[self.get_instruction()]]}", end="\n\n")
 
         # Get debug input.
         while cmd := input("(dbg) "):
@@ -258,7 +288,7 @@ class CPU:
                 break
             elif cmd == "b" or cmd == "break":
                 if not args:
-                    self.breakpoints.add(self.pc // 4)
+                    self.breakpoints.add(self.get_instruction())
                 try:
                     self.breakpoints.add(int(args[0]))
                 except ValueError:
@@ -275,7 +305,7 @@ class CPU:
             elif cmd == "p" or cmd == "print":
                 if not args:
                     self.print_regs()
-                    self.print_stack(STACK_MAX, tc_b32_to_int(self.reg[reg_to_bin["sp"]]))
+                    self.print_stack(STACK_START, tc_b32_to_int(self.reg[reg_to_bin["sp"]]))
                     continue
                 if args[0] not in {"stack", "reg", "mem", "program", "s", "r", "m", "p"}:
                     print(f"Invalid print object: {args[0]}")
@@ -283,15 +313,15 @@ class CPU:
                 if args[0] in {"stack", "s"}:
                     # case 1: print entire stack
                     if len(args) == 1:
-                        self.print_stack(STACK_MAX, tc_b32_to_int(self.reg[reg_to_bin["sp"]]))
+                        self.print_stack(STACK_START, tc_b32_to_int(self.reg[reg_to_bin["sp"]]))
                         continue
                     # case 2: print stack range
                     # print stack <start> <stop>
                     if len(args) != 3:
                         print(f"Invalid syntax: {"TODO"}")
                         continue
-                    if int(args[1]) > STACK_MAX or int(args[1]) < 0 \
-                        or int(args[2]) > STACK_MAX or int(args[2]) < 0 \
+                    if int(args[1]) > STACK_START or int(args[1]) < 0 \
+                        or int(args[2]) > STACK_START or int(args[2]) < 0 \
                         or int(args[1]) > int(args[2]):
                         print(f"Invalid stack values: {args[1]} {args[2]}")
                         continue
@@ -381,10 +411,10 @@ List of commands:
             if (pc := self.program.abs_to_pc_line.get(i, -1)) != -1:
                 # TODO: handle spacing more robustly
                 # TODO: hex memory address instead of instruction number?
-                if pc == self.pc // 4:
-                    print(f">{pc :>3} {line :<30}", end="")
-                else:
-                    print(f"{pc :>4} {line :<30}", end="")
+                line_prefix = ""
+                line_prefix += "*" if pc in self.breakpoints else " "
+                line_prefix += ">" if pc == self.get_instruction() else " "
+                print(f"{line_prefix}{pc :>4} {line :<30}", end="")
                 print(" ".join([format(b, "08b") for b in self.mem[pc * 4:pc * 4 + 4]]))
             else:
                 print(line)
@@ -487,7 +517,7 @@ List of commands:
     def op_nop(self, _):
         self.step_pc()
 
-# Arithmetic instructions
+    # Arithmetic instructions
 
     def op_negi(self, args: list[int]):
         self.reg[args[0]] = tc_neg(self.reg[args[1]])
@@ -578,55 +608,63 @@ List of commands:
     # Jump Instructions
 
     def op_jump(self, args: list[int]):
-        self.pc = args[0] * WORD_SIZE
+        self.pc = args[0]
 
     def op_jra(self, args: list[int]):
         self.pc = self.reg[args[0]]
 
     def op_jeqz(self, args: list[int]):
-        self.pc = args[1] * WORD_SIZE if tc_b32_to_int(self.reg[args[0]]) == 0 else self.pc + WORD_SIZE
+        self.pc = (
+            args[1]
+            if tc_b32_to_int(self.reg[args[0]]) == 0
+            else self.pc + WORD_SIZE
+        )
 
     def op_jnez(self, args: list[int]):
-        self.pc = args[1] * WORD_SIZE if tc_b32_to_int(self.reg[args[0]]) != 0 else self.pc + WORD_SIZE
+        self.pc = (
+            args[1]
+            if tc_b32_to_int(self.reg[args[0]]) != 0
+            else self.pc + WORD_SIZE
+        )
 
     def op_jge(self, args: list[int]):
         self.pc = (
-            args[2] * WORD_SIZE
+            args[2]
             if tc_b32_to_int(self.reg[args[0]]) >= tc_b32_to_int(self.reg[args[1]])
             else self.pc + WORD_SIZE
         )
 
     def op_jle(self, args: list[int]):
         self.pc = (
-            args[2] * WORD_SIZE
+            args[2]
             if tc_b32_to_int(self.reg[args[0]]) <= tc_b32_to_int(self.reg[args[1]])
             else self.pc + WORD_SIZE
         )
 
     def op_jeq(self, args: list[int]):
         self.pc = (
-            args[2] * WORD_SIZE
+            args[2]
             if tc_b32_to_int(self.reg[args[0]]) == tc_b32_to_int(self.reg[args[1]])
             else self.pc + WORD_SIZE
         )
 
     def op_jne(self, args: list[int]):
         self.pc = (
-            args[2] * WORD_SIZE
+            args[2]
             if tc_b32_to_int(self.reg[args[0]]) != tc_b32_to_int(self.reg[args[1]])
             else self.pc + WORD_SIZE
         )
 
     def op_jgt(self, args: list[int]):
         self.pc = (
-            args[2] * WORD_SIZE
+            args[2]
             if tc_b32_to_int(self.reg[args[0]]) > tc_b32_to_int(self.reg[args[1]])
             else self.pc + WORD_SIZE
         )
 
     def op_jlt(self, args: list[int]):
         self.pc = (
-            args[2] * WORD_SIZE
+            args[2]
             if tc_b32_to_int(self.reg[args[0]]) < tc_b32_to_int(self.reg[args[1]])
             else self.pc + WORD_SIZE
         )
@@ -634,7 +672,7 @@ List of commands:
     def op_jsr(self, args: list[int]):
         # I think this is guaranteed to never be over integer limit
         self.reg[args[0]] = self.pc + WORD_SIZE
-        self.pc = args[1] * WORD_SIZE
+        self.pc = args[1]
 
     # Register instructions
 
@@ -664,275 +702,287 @@ List of commands:
 
     def op_pushb(self, args: list[int]):
         if self.reg[reg_to_bin["sp"]] <= self.reg[reg_to_bin["gp"]]:
-            sys.exit(f"Error: stack overflow attempting to execute instruction {self.pc // WORD_SIZE}; halting the machine")
-        self.mem[self.reg[args[1]] - 0] = self.reg[args[0]] & 0xff
-        self.reg[args[1]] = tc_sub(self.reg[args[1]], BYTE_SIZE)
-        self.step_pc()
-
-    def op_popb(self, args: list[int]):
-        self.reg[args[1]] = tc_add(self.reg[args[1]], BYTE_SIZE)
-        word = self.mem[self.reg[args[1]] : self.reg[args[1]] - BYTE_SIZE : -1]
-        self.reg[args[0]] = word[0]
+            sys.exit(f"Error: stack overflow attempting to execute instruction {self.get_instruction()}; halting the machine")
+        addr = tc_b32_to_int(self.reg[args[1]])
+        byte = self.reg[args[0]]
+        self.store_byte(addr, byte)
+        self.reg[args[1]] = tc_int_to_b32(addr - BYTE_SIZE)
         self.step_pc()
 
     def op_pushs(self, args: list[int]):
         if self.reg[reg_to_bin["sp"]] <= self.reg[reg_to_bin["gp"]]:
-            sys.exit(f"Error: stack overflow attempting to execute instruction {self.pc // WORD_SIZE}; halting the machine")
-        self.mem[self.reg[args[1]] - 0] = self.reg[args[0]] & 0xff
-        self.mem[self.reg[args[1]] - 1] = (self.reg[args[0]] >> 8) & 0xff
-        self.reg[args[1]] = tc_sub(self.reg[args[1]], SHORT_SIZE)
-        self.step_pc()
-
-    def op_pops(self, args: list[int]):
-        self.reg[args[1]] = tc_add(self.reg[args[1]], SHORT_SIZE)
-        word = self.mem[self.reg[args[1]] : self.reg[args[1]] - SHORT_SIZE : -1]
-        self.reg[args[0]] = word[1] << 8 | word[0]
+            sys.exit(f"Error: stack overflow attempting to execute instruction {self.get_instruction()}; halting the machine")
+        addr = tc_b32_to_int(self.reg[args[1]])
+        short = self.reg[args[0]]
+        self.store_short(addr - 1, short)
+        self.reg[args[1]] = tc_int_to_b32(addr - SHORT_SIZE)
         self.step_pc()
 
     def op_pushw(self, args: list[int]):
         if self.reg[reg_to_bin["sp"]] <= self.reg[reg_to_bin["gp"]]:
-            sys.exit(f"Error: stack overflow attempting to execute instruction {self.pc // WORD_SIZE}; halting the machine")
-        self.mem[self.reg[args[1]] - 0] = self.reg[args[0]] & 0xff
-        self.mem[self.reg[args[1]] - 1] = (self.reg[args[0]] >> 8) & 0xff
-        self.mem[self.reg[args[1]] - 2] = (self.reg[args[0]] >> 16) & 0xff
-        self.mem[self.reg[args[1]] - 3] = (self.reg[args[0]] >> 24) & 0xff
-        self.reg[args[1]] = tc_sub(self.reg[args[1]], WORD_SIZE)
+            sys.exit(f"Error: stack overflow attempting to execute instruction {self.get_instruction()}; halting the machine")
+        addr = tc_b32_to_int(self.reg[args[1]])
+        word = self.reg[args[0]]
+        self.store_word(addr - 3, word)
+        self.reg[args[1]] = tc_int_to_b32(addr - WORD_SIZE)
+        self.step_pc()
+
+    def op_popb(self, args: list[int]):
+        addr = tc_b32_to_int(self.reg[args[1]]) + BYTE_SIZE
+        self.reg[args[1]] = tc_int_to_b32(addr)
+        self.reg[args[0]] = self.load_byte(addr)
+        self.step_pc()
+
+    def op_pops(self, args: list[int]):
+        addr = tc_b32_to_int(self.reg[args[1]]) + SHORT_SIZE
+        self.reg[args[1]] = tc_int_to_b32(addr)
+        self.reg[args[0]] = self.load_short(addr - SHORT_SIZE + 1)
         self.step_pc()
 
     def op_popw(self, args: list[int]):
-        global reg
-        self.reg[args[1]] = tc_add(self.reg[args[1]], WORD_SIZE)
-        word = self.mem[self.reg[args[1]] : self.reg[args[1]] - WORD_SIZE : -1]
-        self.reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
+        addr = tc_b32_to_int(self.reg[args[1]]) + WORD_SIZE
+        self.reg[args[1]] = tc_int_to_b32(addr)
+        self.reg[args[0]] = self.load_word(addr - WORD_SIZE + 1)
         self.step_pc()
 
     # Load/store stack instructions
 
-    # TODO: add 0xff mask to left shifted bytes?
-
-    # TODO: change from addr : addr - ? to addr - ? + 1 : addr + 1 ?
-    # - to avoid case where addr - ? is -1 and last byte gets cut off
     def op_ldbn(self, args: list[int]):
-        addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
-        word = self.mem[addr : addr - BYTE_SIZE : -1]
-        self.reg[args[0]] = word[0]
+        addr = tc_b32_to_int(self.reg[args[1]])
+        offset = tc_b16_to_int(args[2])
+        self.reg[args[0]] = self.load_byte(addr + offset)
         self.step_pc()
 
     def op_ldsn(self, args: list[int]):
-        addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
-        word = self.mem[addr : addr - SHORT_SIZE : -1]
-        self.reg[args[0]] = word[1] << 8 | word[0]
+        addr = tc_b32_to_int(self.reg[args[1]])
+        offset = tc_b16_to_int(args[2])
+        self.reg[args[0]] = self.load_short(addr + offset - SHORT_SIZE + 1)
         self.step_pc()
 
     def op_ldwn(self, args: list[int]):
-        addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
-        word = self.mem[addr : addr - WORD_SIZE : -1]
-        self.reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
+        addr = tc_b32_to_int(self.reg[args[1]])
+        offset = tc_b16_to_int(args[2])
+        self.reg[args[0]] = self.load_word(addr + offset - WORD_SIZE + 1)
         self.step_pc()
 
     def op_stbn(self, args: list[int]):
-        addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
-        self.mem[addr - 0] = self.reg[args[0]] & 0xff
+        addr = tc_b32_to_int(self.reg[args[1]])
+        offset = tc_b16_to_int(args[2])
+        byte = self.reg[args[0]]
+        self.store_byte(addr + offset, byte)
         self.step_pc()
 
     def op_stsn(self, args: list[int]):
-        addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
-        self.mem[addr - 0] = self.reg[args[0]] & 0xff
-        self.mem[addr - 1] = (self.reg[args[0]] >> 8) & 0xff
+        addr = tc_b32_to_int(self.reg[args[1]])
+        offset = tc_b16_to_int(args[2])
+        short = self.reg[args[0]]
+        self.store_short(addr + offset - SHORT_SIZE + 1, short)
         self.step_pc()
 
     def op_stwn(self, args: list[int]):
-        addr = tc_add(self.reg[args[1]], tc_b16_to_b32(args[2]))
-        self.mem[addr - 0] = self.reg[args[0]] & 0xff
-        self.mem[addr - 1] = (self.reg[args[0]] >> 8) & 0xff
-        self.mem[addr - 2] = (self.reg[args[0]] >> 16) & 0xff
-        self.mem[addr - 3] = (self.reg[args[0]] >> 24) & 0xff
+        addr = tc_b32_to_int(self.reg[args[1]])
+        offset = tc_b16_to_int(args[2])
+        word = self.reg[args[0]]
+        self.store_word(addr + offset - WORD_SIZE + 1, word)
         self.step_pc()
 
     def op_ldbr(self, args: list[int]):
-        word = self.mem[self.reg[args[1]] : self.reg[args[1]] - BYTE_SIZE : -1]
-        self.reg[args[0]] = word[0]
+        addr = tc_b32_to_int(self.reg[args[1]])
+        self.reg[args[0]] = self.load_byte(addr)
         self.step_pc()
 
     def op_ldsr(self, args: list[int]):
-        word = self.mem[self.reg[args[1]] : self.reg[args[1]] - SHORT_SIZE : -1]
-        self.reg[args[0]] = word[1] << 8 | word[0]
+        addr = tc_b32_to_int(self.reg[args[1]])
+        self.reg[args[0]] = self.load_short(addr - SHORT_SIZE + 1)
         self.step_pc()
 
     def op_ldwr(self, args: list[int]):
-        word = self.mem[self.reg[args[1]] : self.reg[args[1]] - WORD_SIZE : -1]
-        self.reg[args[0]] = word[3] << 24 | word[2] << 16 | word[1] << 8 | word[0]
+        addr = tc_b32_to_int(self.reg[args[1]])
+        self.reg[args[0]] = self.load_word(addr - WORD_SIZE + 1)
         self.step_pc()
 
     def op_stbr(self, args: list[int]):
-        self.mem[self.reg[args[1]] - 0] = self.reg[args[0]] & 0xff
+        addr = tc_b32_to_int(self.reg[args[1]])
+        byte = self.reg[args[0]]
+        self.store_byte(addr, byte)
         self.step_pc()
 
     def op_stsr(self, args: list[int]):
-        self.mem[self.reg[args[1]] - 0] = self.reg[args[0]] & 0xff
-        self.mem[self.reg[args[1]] - 1] = (self.reg[args[0]] >> 8) & 0xff
+        addr = tc_b32_to_int(self.reg[args[1]])
+        short = self.reg[args[0]]
+        self.store_short(addr - SHORT_SIZE + 1, short)
         self.step_pc()
 
     def op_stwr(self, args: list[int]):
-        self.mem[self.reg[args[1]] - 0] = self.reg[args[0]] & 0xff
-        self.mem[self.reg[args[1]] - 1] = (self.reg[args[0]] >> 8) & 0xff
-        self.mem[self.reg[args[1]] - 2] = (self.reg[args[0]] >> 16) & 0xff
-        self.mem[self.reg[args[1]] - 3] = (self.reg[args[0]] >> 24) & 0xff
+        addr = tc_b32_to_int(self.reg[args[1]])
+        word = self.reg[args[0]]
+        self.store_word(addr - WORD_SIZE + 1, word)
         self.step_pc()
 
     # Load/store heap instruction
 
     def op_ldba(self, args: list[int]):
-        byte = self.mem[args[1]]
-        self.reg[args[0]] = byte
+        self.reg[args[0]] = self.load_byte(args[1])
         self.step_pc()
 
     def op_ldsa(self, args: list[int]):
-        short = self.mem[args[1] : args[1] + SHORT_SIZE]
-        self.reg[args[0]] = short[0] << 8 | short[1]
+        self.reg[args[0]] = self.load_short(args[1])
         self.step_pc()
 
     def op_ldwa(self, args:list[int]):
-        word = self.mem[args[1] : args[1] + WORD_SIZE]
-        self.reg[args[0]] = word[0] << 24 | word[1] << 16 | word[2] << 8 | word[3]
+        self.reg[args[0]] = self.load_word(args[1])
         self.step_pc()
 
     def op_stba(self, args: list[int]):
-        self.mem[args[1]] = args[0] & 0xff
+        self.store_byte(args[1], args[0])
         self.step_pc()
 
     def op_stsa(self, args: list[int]):
-        addr = args[1]
-        short = self.reg[args[0]]
-        self.mem[addr]     = (short >> 8) & 0xff
-        self.mem[addr + 1] = short & 0xff
+        self.store_short(args[1], args[0])
         self.step_pc()
 
     def op_stwa(self, args: list[int]):
-        addr = args[1]
-        word = self.reg[args[0]]
-        self.mem[addr]     = (word >> 24) & 0xff
-        self.mem[addr + 1] = (word >> 16) & 0xff
-        self.mem[addr + 2] = (word >> 8) & 0xff
-        self.mem[addr + 3] = word & 0xff
+        self.store_word(args[1], args[0])
         self.step_pc()
 
     # array instructions
 
     def op_anewb(self, args: list[int]):
-        len = tc_b16_to_int(args[1])
+        arrlen = tc_b16_to_int(args[1])
         addr = self.reg[args[0]]
-        self.mem[addr] = (len >> 8) & 0xff
-        self.mem[addr + 1] = len & 0xff
-        for i in range(2, 2 + len * BYTE_SIZE):
+        self.store_short(addr, arrlen)
+        for i in range(2, 2 + arrlen):
             self.mem[addr + i] = 0
         self.step_pc()
 
     def op_anews(self, args: list[int]):
-        len = tc_b16_to_int(args[1])
+        arrlen = tc_b16_to_int(args[1])
         addr = self.reg[args[0]]
-        self.mem[addr] = (len >> 8) & 0xff
-        self.mem[addr + 1] = len & 0xff
-        for i in range(2, 2 + len * SHORT_SIZE):
+        self.store_short(addr, arrlen)
+        for i in range(SHORT_SIZE, SHORT_SIZE + arrlen * SHORT_SIZE):
             self.mem[addr + i] = 0
         self.step_pc()
 
-    # rX = address, N = length
     def op_aneww(self, args: list[int]):
-        len = tc_b16_to_int(args[1])
+        arrlen = tc_b16_to_int(args[1])
         addr = self.reg[args[0]]
-        self.mem[addr] = (len >> 8) & 0xff
-        self.mem[addr + 1] = len & 0xff
-        for i in range(2, 2 + len * WORD_SIZE):
+        self.store_short(addr, arrlen)
+        for i in range(SHORT_SIZE, SHORT_SIZE + arrlen * WORD_SIZE):
             self.mem[addr + i] = 0
         self.step_pc()
 
     def op_aldb(self, args: list[int]):
         addr = self.reg[args[1]]
-        short = self.mem[addr : addr + SHORT_SIZE]
-        len = short[0] << 8 | short[1]
+        arrlen = self.load_short(addr)
         index = tc_b16_to_int(self.reg[args[2]])
-        if index > len - 1:
-            sys.exit(f"Error: out of bounds array access at instruction {self.pc // WORD_SIZE}; halting the machine")
-        addr_w_offset = addr + 2 + index * BYTE_SIZE
-        num = self.mem[addr_w_offset : addr_w_offset + BYTE_SIZE]
-        self.reg[args[0]] = num[0]
+        if index > arrlen - 1:
+            sys.exit(f"Error: out of bounds array access at instruction {self.get_instruction()}; halting the machine")
+        offset = SHORT_SIZE + index
+        self.reg[args[0]] = self.load_byte(addr + offset)
         self.step_pc()
 
     def op_alds(self, args: list[int]):
         addr = self.reg[args[1]]
-        short = self.mem[addr : addr + SHORT_SIZE]
-        len = short[0] << 8 | short[1]
+        arrlen = self.load_short(addr)
         index = tc_b16_to_int(self.reg[args[2]])
-        if index > len - 1:
-            sys.exit(f"Error: out of bounds array access at instruction {self.pc // WORD_SIZE}; halting the machine")
-        addr_w_offset = addr + 2 + index * SHORT_SIZE
-        num = self.mem[addr_w_offset : addr_w_offset + SHORT_SIZE]
-        self.reg[args[0]] = num[0] << 8 | num[1]
+        if index > arrlen - 1:
+            sys.exit(f"Error: out of bounds array access at instruction {self.get_instruction()}; halting the machine")
+        offset = SHORT_SIZE + index * SHORT_SIZE
+        self.reg[args[0]] = self.load_short(addr + offset)
         self.step_pc()
 
-    # rX = dest, rY = addr, rZ = index
     def op_aldw(self, args: list[int]):
         addr = self.reg[args[1]]
-        short = self.mem[addr : addr + SHORT_SIZE]
-        len = short[0] << 8 | short[1]
+        arrlen = self.load_short(addr)
         index = tc_b16_to_int(self.reg[args[2]])
-        if index > len - 1:
-            sys.exit(f"Error: out of bounds array access at instruction {self.pc // WORD_SIZE}; halting the machine")
-        addr_w_offset = addr + 2 + index * WORD_SIZE
-        num = self.mem[addr_w_offset : addr_w_offset + WORD_SIZE]
-        self.reg[args[0]] = num[0] << 24 | num[1] << 16 | num[2] << 8 | num[3]
+        if index > arrlen - 1:
+            sys.exit(f"Error: out of bounds array access at instruction {self.get_instruction()}; halting the machine")
+        offset = SHORT_SIZE + index * WORD_SIZE
+        self.reg[args[0]] = self.load_word(addr + offset)
         self.step_pc()
 
     def op_astb(self, args: list[int]):
         addr = self.reg[args[1]]
-        short = self.mem[addr : addr + SHORT_SIZE]
-        len = short[0] << 8 | short[1]
+        arrlen = self.load_short(addr)
         index = tc_b16_to_int(self.reg[args[2]])
-        if index > len - 1:
-            sys.exit(f"Error: out of bounds array access at instruction {self.pc // WORD_SIZE}; halting the machine")
-        addr_w_offset = addr + SHORT_SIZE + index * BYTE_SIZE
-        source_val = self.reg[args[0]]
-        self.mem[addr_w_offset] = source_val & 0xff
+        if index > arrlen - 1:
+            sys.exit(f"Error: out of bounds array access at instruction {self.get_instruction()}; halting the machine")
+        offset = SHORT_SIZE + index
+        self.store_byte(addr + offset, self.reg[args[0]])
         self.step_pc()
 
     def op_asts(self, args: list[int]):
         addr = self.reg[args[1]]
-        short = self.mem[addr : addr + SHORT_SIZE]
-        len = short[0] << 8 | short[1]
+        arrlen = self.load_short(addr)
         index = tc_b16_to_int(self.reg[args[2]])
-        if index > len - 1:
-            sys.exit(f"Error: out of bounds array access at instruction {self.pc // WORD_SIZE}; halting the machine")
-        addr_w_offset = addr + SHORT_SIZE + index * SHORT_SIZE
-        source_val = self.reg[args[0]]
-        self.mem[addr_w_offset] = (source_val >> 8) & 0xff
-        self.mem[addr_w_offset + 1] = source_val & 0xff
+        if index > arrlen - 1:
+            sys.exit(f"Error: out of bounds array access at instruction {self.get_instruction()}; halting the machine")
+        offset = SHORT_SIZE + index * SHORT_SIZE
+        self.store_short(addr + offset, self.reg[args[0]])
         self.step_pc()
 
-    # rx = source, ry = addr, rZ = index
     def op_astw(self, args: list[int]):
         addr = self.reg[args[1]]
-        short = self.mem[addr : addr + SHORT_SIZE]
-        len = short[0] << 8 | short[1]
+        arrlen = self.load_short(addr)
         index = tc_b16_to_int(self.reg[args[2]])
-        if index > len - 1:
-            sys.exit(f"Error: out of bounds array access at instruction {self.pc // WORD_SIZE}; halting the machine")
-        addr_w_offset = addr + SHORT_SIZE + index * WORD_SIZE
-        source_val = self.reg[args[0]]
-        self.mem[addr_w_offset] = (source_val >> 24) & 0xff
-        self.mem[addr_w_offset + 1] = (source_val >> 16) & 0xff
-        self.mem[addr_w_offset + 2] = (source_val >> 8) & 0xff
-        self.mem[addr_w_offset + 3] = source_val & 0xff
+        if index > arrlen - 1:
+            sys.exit(f"Error: out of bounds array access at instruction {self.get_instruction()}; halting the machine")
+        offset = SHORT_SIZE + index * WORD_SIZE
+        self.store_word(addr + offset, self.reg[args[0]])
         self.step_pc()
 
-    # rX = dest, rY = addr
     def op_alen(self, args: list[int]):
         addr = self.reg[args[1]]
-        short = self.mem[addr : addr + SHORT_SIZE]
-        len = short[0] << 8 | short[1]
-        self.reg[args[0]] = len
+        self.reg[args[0]] = self.load_short(addr)
         self.step_pc()
 
+    def store_byte(self, addr: int, byte: int):
+        if not self.valid_address(addr):
+            sys.exit(f"Error: attempted to store outside of address range at instruction {self.get_instruction()}; halting the machine")
+        self.mem[addr] = byte & 0xff
+
+    def store_short(self, addr: int, word: int):
+        if not self.valid_address(addr):
+            sys.exit(f"Error: attempted to store outside of address range at instruction {self.get_instruction()}; halting the machine")
+        self.mem[addr]     = (word >> 8) & 0xff
+        self.mem[addr + 1] =  word       & 0xff
+
+    def store_word(self, addr: int, word: int):
+        if not self.valid_address(addr):
+            sys.exit(f"Error: attempted to store outside of address range at instruction {self.get_instruction()}; halting the machine")
+        self.mem[addr]     = (word >> 24) & 0xff
+        self.mem[addr + 1] = (word >> 16) & 0xff
+        self.mem[addr + 2] = (word >>  8) & 0xff
+        self.mem[addr + 3] =  word        & 0xff
+
+    def load_byte(self, addr: int) -> int:
+        if not self.valid_address(addr):
+            sys.exit(f"Error: attempted to load outside of address range at instruction {self.get_instruction()}; halting the machine")
+        return self.mem[addr]
+
+    def load_short(self, addr: int) -> int:
+        if not self.valid_address(addr):
+            sys.exit(f"Error: attempted to load outside of address range at instruction {self.get_instruction()}; halting the machine")
+        return (
+            self.mem[addr] << 8
+          | self.mem[addr + 1]
+        )
+
+    def load_word(self, addr: int) -> int:
+        if not self.valid_address(addr):
+            sys.exit(f"Error: attempted to load outside of address range at instruction {self.get_instruction()}; halting the machine")
+        return (
+            self.mem[addr]     << 24
+          | self.mem[addr + 1] << 16
+          | self.mem[addr + 2] << 8
+          | self.mem[addr + 3]
+        )
+
+    def valid_address(self, addr: int):
+        return 0 <= addr and addr <= STACK_START
+
+    def get_instruction(self):
+        return self.pc // WORD_SIZE
 
 class Parser:
     def __init__(self, inFile: str):
@@ -944,7 +994,9 @@ class Parser:
 
         self.machine_code: list[tuple[int, int, int, int]] = []
         self.labels: dict[str, int] = {}
+
         self.data_ids: dict[str, tuple[str, list[int], int]] = {}
+        self.data_offset: int = 0
 
     def parse(self) -> Program:
         tokens = self._tokenize()
@@ -1028,8 +1080,6 @@ class Parser:
             # TODO: -1 necessary?
             data_end = len(lines)
 
-        data_offset = 0
-
         # Validate data section.
         for line in lines[data_start:data_end]:
             line = line.strip()
@@ -1059,41 +1109,41 @@ class Parser:
 
             if toks[0] in [".byte", ".short", ".int"]:
                 if is_int(toks[3]):
-                    self.data_ids[toks[1]] = (toks[0], [tc_int_to_b32(int(toks[3]))], data_offset)
+                    self.data_ids[toks[1]] = (toks[0], [tc_int_to_b32(int(toks[3]))], self.data_offset)
                     # TODO: change this for varying width types
-                    data_offset += 4
+                    self.data_offset += 4
             elif toks[0] == ".float":
                 if is_float(toks[3]):
-                    self.data_ids[toks[1]] = (toks[0], [fp_float_to_f32(float(toks[3]))], data_offset)
-                    data_offset += 4
+                    self.data_ids[toks[1]] = (toks[0], [fp_float_to_f32(float(toks[3]))], self.data_offset)
+                    self.data_offset += 4
             elif toks[0] == ".char":
                 # TODO: require quotes?
-                byte_list = list(toks[3].encode("utf-16-be"))
-                ch = byte_list[0] << 8 | byte_list[1]
-                if len(byte_list) != 2:
+                utf16_bytes = list(toks[3].encode("utf-16-be"))
+                utf16_char = utf16_bytes[0] << 8 | utf16_bytes[1]
+                if len(utf16_bytes) != 2:
                     sys.exit(f"Error {self.inFile}@{lineno}: invalid unicode character '{toks[3]}'")
-                self.data_ids[toks[1]] = (toks[0], [ch], data_offset)
-                data_offset += 2
+                self.data_ids[toks[1]] = (toks[0], [utf16_char], self.data_offset)
+                self.data_offset += 2
             elif toks[0] == ".string":
                 string = toks[3]
                 string = string.replace(r"\n", "\n")
-                chars: list[int] = []
+                utf16_chars: list[int] = []
                 for c in list(string):
-                    byte_list = list(c.encode("utf-16-be"))
-                    ch = byte_list[0] << 8 | byte_list[1]
-                    chars.append(ch)
-                self.data_ids[toks[1]] = (toks[0], chars, data_offset)
-                data_offset += len(toks[3]) * SHORT_SIZE
+                    utf16_bytes = list(c.encode("utf-16-be"))
+                    utf16_char = utf16_bytes[0] << 8 | utf16_bytes[1]
+                    utf16_chars.append(utf16_char)
+                self.data_ids[toks[1]] = (toks[0], utf16_chars, self.data_offset)
+                self.data_offset += len(toks[3]) * SHORT_SIZE
 
         pc_line = 0
         abs_line = 0
 
         halt_found = False
 
+        lineno = text_start + 1
         # Validate text section.
         for line in lines[text_start:text_end]:
             line = line.strip().lower()
-            lineno = text_start + 1
 
             # Skip empty lines, comments, and self.labels.
             if not line or line.startswith("#"):
@@ -1119,7 +1169,7 @@ class Parser:
             if len(args) != len(opcode_to_argmask[opcode]):
                 argmask = opcode_to_argmask[opcode]
                 # TODO: argmask to str?
-                sys.exit(f"Error {self.inFile}@{lineno}: opcode expects {len(argmask)} arguments: '{argmask}'")
+                sys.exit(f"Error {self.inFile}@{lineno}: opcode {opcode} expects {len(argmask)} arguments: '{argmask}'")
             for i, c in enumerate(opcode_to_argmask[opcode]):
                 # TODO: do we need a 'c' case for chars? how to handle strings?
                 if c == "r":
@@ -1150,6 +1200,7 @@ class Parser:
 
             if opcode == "halt":
                 halt_found = True
+            lineno += 1
 
         if not halt_found:
             sys.exit(f"Error: {self.inFile}: halt instruction not found")
@@ -1185,20 +1236,25 @@ class Parser:
                     byte_list[curr_byte - 1] = val >> 8
                     curr_byte -= 2
                 elif c == "l":
-                    val = tc_int_to_b16(self.labels[args[i]])
-                    byte_list[curr_byte] = val & 0xff
-                    byte_list[curr_byte - 1] = val >> 8
+                    addr = self.labels[args[i]] * WORD_SIZE
+                    byte_list[curr_byte] = addr & 0xff
+                    byte_list[curr_byte - 1] = addr >> 8
                     curr_byte -= 2
                 elif c == "a":
                     if self.valid_variable(args[i]):
-                        val = tc_int_to_b16(DATA_START + self.data_ids[args[i]][2])
-                        byte_list[curr_byte] = val & 0xff
-                        byte_list[curr_byte - 1] = val >> 8
+                        if args[i] == "argc":
+                            addr = DATA_START + self.data_offset
+                        elif args[i] == "argv":
+                            addr = DATA_START + self.data_offset + SHORT_SIZE
+                        else:
+                            addr = DATA_START + self.data_ids[args[i]][2]
+                        byte_list[curr_byte] = addr & 0xff
+                        byte_list[curr_byte - 1] = addr >> 8
                         curr_byte -= 2
                     else:
-                        val = tc_int_to_b16(int(args[i]))
-                        byte_list[curr_byte] = val & 0xff
-                        byte_list[curr_byte - 1] = val >> 8
+                        addr = int(args[i])
+                        byte_list[curr_byte] = addr & 0xff
+                        byte_list[curr_byte - 1] = addr >> 8
                         curr_byte -= 2
 
                 i -= 1
@@ -1210,12 +1266,12 @@ class Parser:
         return label in self.labels.keys()
 
     def valid_variable(self, variable: str) -> bool:
-        return variable in self.data_ids.keys()
+        return variable in self.data_ids.keys() or variable == "argc" or variable == "argv"
 
     def valid_address(self, address: str) -> bool:
         try:
             addr = int(address)
-            return 0 <= addr and addr <= STACK_MAX
+            return 0 <= addr and addr <= STACK_START
         except ValueError:
             return False
 

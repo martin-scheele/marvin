@@ -1,0 +1,22 @@
+.text
+start:
+    seti    r0 argv             # r0 := $argv
+    alen    r1 r0               # r1 := len(argv)
+    seti    r2 0                # i := 0
+outer:
+    jge     r2 r1 end_outer     # jump if i >= len(argv)
+    alds    r3 r0 r2            # r3 := argv[i] (addr of first arg)
+    alen    r4 r3               # r4 := len(argv[i])
+    seti    r5 0                # j := 0
+inner:
+    jge     r5 r4 end_inner     # jump if j >= len(argv[i])
+    alds    r6 r3 r5            # r6 := argv[i][j]
+    writec  r6                  # write(argv[i][j])
+    inci    r5 1                # j++
+    jump    inner               # next inner iteration
+end_inner:
+    inci    r2 1                # i++
+    jump    outer               # next outer iteration
+end_outer:
+    halt
+
