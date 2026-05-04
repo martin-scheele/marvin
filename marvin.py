@@ -38,7 +38,7 @@ opcode_to_bin = {
     "jgt":    0b00111000, "jlt":    0b00111001, "jsr":    0b00111010,
     # register instructions
     "seti":   0b01000000, "inci":   0b01000001, "setf":   0b01000010, "incf":  0b01000011,
-    "copy":   0b01000100,
+    "copy":   0b01000100, "seta":   0b01000101,
     # stack insructions
     "pushb":  0b01010000, "popb":   0b01010001,
     "pushs":  0b01010010, "pops":   0b01010011,
@@ -77,8 +77,8 @@ opcode_to_argmask = {
     "jge":    "rrl", "jle":    "rrl", "jeq":    "rrl", "jne":   "rrl",
     "jgt":    "rrl", "jlt":    "rrl", "jsr":    "rl",
     # register instructions
-    "seti":   "ra",  "inci":   "rn",  "setf":   "rf",  "incf":  "rf",
-    "copy":   "rr",
+    "seti":   "rn",  "inci":   "rn",  "setf":   "rf",  "incf":  "rf",
+    "copy":   "rr",  "seta":   "ra",
     # stack insructions
     "pushb":  "rr",  "popb":   "rr",
     "pushs":  "rr",  "pops":   "rr",
@@ -182,28 +182,28 @@ class CPU:
             for b in range(4):
                 self.mem[i * 4 + b] = v[b]
 
-        heap_offset = 0
 
         # Load the data section variables into memory at the start of the heap.
+        heap_offset = 0
         for data_type, data_vals, data_offset in self.program.data_ids.values():
             if data_type in [".byte"]:
                 data_val = data_vals[0]
                 self.store_byte(DATA_START + data_offset, data_val)
-                heap_offset += 1
+                heap_offset += BYTE_SIZE
             elif data_type in [".short", ".char"]:
                 data_val = data_vals[0]
                 self.store_short(DATA_START + data_offset, data_val)
-                heap_offset += 2
+                heap_offset += SHORT_SIZE
             elif data_type in [".int", ".float"]:
                 data_val = data_vals[0]
                 self.store_word(DATA_START + data_offset, data_val)
-                heap_offset += 4
+                heap_offset += WORD_SIZE
             elif data_type in [".string"]:
                 utf16_chars = data_vals
                 arglen = len(utf16_chars)
                 self.store_short(DATA_START + data_offset, arglen)
                 for i in range(arglen):
-                    addr = DATA_START + data_offset + 2 + i * 2
+                    addr = DATA_START + data_offset + SHORT_SIZE + i * SHORT_SIZE
                     self.store_short(addr, utf16_chars[i])
                 heap_offset += (SHORT_SIZE + arglen * SHORT_SIZE)
 
@@ -254,11 +254,9 @@ class CPU:
             self.debug_exec()
 
             opcode = bin_to_opcode[self.ir >> 24]
-            args = extract_args(self.ir, opcode_to_argmask[opcode])
-
-            # TODO: implement default case
             op_fn = getattr(self, f"op_{opcode}")
-            op_fn(args)
+            args = extract_args(self.ir, opcode_to_argmask[opcode])
+            op_fn(*args) if args else op_fn()
 
             # TODO: actually delay and visualize
             if self.count_calls:
@@ -443,12 +441,12 @@ List of commands:
 
     # System Instructions
 
-    def op_halt(self, _):
+    def op_halt(self):
         if self.count_calls:
             print_opcode_cost()
         sys.exit()
 
-    def op_readi(self, args: list[int]):
+    def op_readi(self, rX: int):
         while True:
             try:
                 x = int(input())
@@ -457,11 +455,11 @@ List of commands:
                 raise ValueError
             except ValueError:
                 print("Illegal input: input must be a number must be in [-32768, 32767]")
-        self.reg[args[0]] = tc_int_to_b32(x)
+        self.reg[rX] = tc_int_to_b32(x)
         self.step_pc()
 
 
-    def op_readf(self, args: list[int]):
+    def op_readf(self, rX: int):
         while True:
             try:
                 x = float(input())
@@ -469,471 +467,476 @@ List of commands:
             except ValueError:
                 # TODO: better error message
                 print("Illegal input: input must be a number")
-        self.reg[args[0]] = fp_float_to_f32(x)
+        self.reg[rX] = fp_float_to_f32(x)
         self.step_pc()
 
-    def op_readc(self, args: list[int]):
+    def op_readc(self, rX: int):
         byte_list = list(str(getch()).encode("utf-16-be"))
-        self.reg[args[0]] = byte_list[0] << 8 | byte_list[1]
+        self.reg[rX] = byte_list[0] << 8 | byte_list[1]
         self.step_pc()
 
-    def op_writei(self, args: list[int]):
-        print(tc_b32_to_int(self.reg[args[0]]))
+    def op_writei(self, rX: int):
+        print(tc_b32_to_int(self.reg[rX]))
         self.step_pc()
 
-    def op_writef(self, args: list[int]):
-        print(fp_f32_to_float(self.reg[args[0]]))
+    def op_writef(self, rX: int):
+        print(fp_f32_to_float(self.reg[rX]))
         self.step_pc()
 
-    def op_writec(self, args: list[int]):
+    def op_writec(self, rX: int):
         # TODO: how to handle value outside of range? clamp?
-        print(self.reg[args[0]].to_bytes(2, 'big').decode("utf-16-be"), end="")
+        print(self.reg[rX].to_bytes(2, 'big').decode("utf-16-be"), end="")
         self.step_pc()
 
-    def op_seed(self, args: list[int]):
-        random.seed((self.reg[args[0]]))
+    def op_seed(self, rX: int):
+        random.seed((self.reg[rX]))
         self.step_pc()
 
-    def op_rand(self, args: list[int]):
-        lo = tc_b32_to_int(self.reg[args[0]])
-        hi = tc_b32_to_int(self.reg[args[1]])
-        self.reg[args[2]] = tc_int_to_b32(random.randint(lo, hi))
+    def op_rand(self, rX: int, rY: int, rZ: int):
+        lo = tc_b32_to_int(self.reg[rX])
+        hi = tc_b32_to_int(self.reg[rY])
+        self.reg[rX] = tc_int_to_b32(random.randint(lo, hi))
         self.step_pc()
 
-    def op_time(self, args: list[int]):
+    def op_time(self, rX: int):
         now = datetime.datetime.now()
-        self.reg[args[0]] = (now.hour * 3600 + now.minute * 60 + now.second) * 1000 + now.microsecond // 1000
+        self.reg[rX] = (
+            now.hour * 3600 + now.minute * 60 + now.second
+        ) * 1000 + now.microsecond // 1000
         self.step_pc()
 
 
-    def op_date(self, args: list[int]):
+    def op_date(self, rX: int):
         today = datetime.date.today()
         # [31:13]: year  - 19 bits - 524287 values
         # [12:9]:  month - 4  bits - 16     values
         # [8:0]:   day   - 9  bits - 512    values
-        self.reg[args[0]] = today.year << 13 | today.month << 9 | today.day
+        self.reg[rX] = today.year << 13 | today.month << 9 | today.day
         self.step_pc()
 
-    def op_nop(self, _):
+    def op_nop(self):
         self.step_pc()
 
     # Arithmetic instructions
 
-    def op_negi(self, args: list[int]):
-        self.reg[args[0]] = tc_neg(self.reg[args[1]])
+    def op_negi(self, rX: int, rY: int):
+        self.reg[rX] = tc_neg(self.reg[rY])
         self.step_pc()
 
-    def op_addi(self, args: list[int]):
-        self.reg[args[0]] = tc_add(self.reg[args[1]], self.reg[args[2]])
+    def op_addi(self, rX: int, rY: int, rZ:int):
+        self.reg[rX] = tc_add(self.reg[rY], self.reg[rZ])
         self.step_pc()
 
-    def op_subi(self, args: list[int]):
-        self.reg[args[0]] = tc_sub(self.reg[args[1]], self.reg[args[2]])
+    def op_subi(self, rX: int, rY: int, rZ: int):
+        self.reg[rX] = tc_sub(self.reg[rY], self.reg[rZ])
         self.step_pc()
 
-    def op_muli(self, args: list[int]):
-        self.reg[args[0]] = tc_mul(self.reg[args[1]], self.reg[args[2]])
+    def op_muli(self, rX: int, rY: int, rZ: int):
+        self.reg[rX] = tc_mul(self.reg[rY], self.reg[rZ])
         self.step_pc()
 
-    def op_divi(self, args: list[int]):
-        self.reg[args[0]] = tc_div(self.reg[args[1]], self.reg[args[2]])
+    def op_divi(self, rX: int, rY: int, rZ: int):
+        self.reg[rX] = tc_div(self.reg[rY], self.reg[rZ])
         self.step_pc()
 
-    def op_modi(self, args: list[int]):
-        self.reg[args[0]] = tc_mod(self.reg[args[1]], self.reg[args[2]])
+    def op_modi(self, rX: int, rY: int, rZ: int):
+        self.reg[rX] = tc_mod(self.reg[rY], self.reg[rZ])
         self.step_pc()
 
-    def op_negf(self, args: list[int]):
-        self.reg[args[0]] = self.reg[args[1]] ^ (1 << 31)
+    def op_negf(self, rX: int, rY: int):
+        self.reg[rX] = self.reg[rY] ^ (1 << 31)
         self.step_pc()
 
-    def op_addf(self, args: list[int]):
-        self.reg[args[0]] = fp_float_to_f32(fp_f32_to_float(self.reg[args[1]]) + fp_f32_to_float(self.reg[args[2]]))
+    def op_addf(self, rX: int, rY: int, rZ: int):
+        self.reg[rX] = fp_float_to_f32(fp_f32_to_float(self.reg[rY]) + fp_f32_to_float(self.reg[rZ]))
         self.step_pc()
 
-    def op_subf(self, args: list[int]):
-        self.reg[args[0]] = fp_float_to_f32(fp_f32_to_float(self.reg[args[1]]) - fp_f32_to_float(self.reg[args[2]]))
+    def op_subf(self, rX: int, rY: int, rZ: int):
+        self.reg[rX] = fp_float_to_f32(fp_f32_to_float(self.reg[rY]) - fp_f32_to_float(self.reg[rZ]))
         self.step_pc()
 
-    def op_mulf(self, args: list[int]):
-        self.reg[args[0]] = fp_float_to_f32(fp_f32_to_float(self.reg[args[1]]) * fp_f32_to_float(self.reg[args[2]]))
+    def op_mulf(self, rX: int, rY: int, rZ: int):
+        self.reg[rX] = fp_float_to_f32(fp_f32_to_float(self.reg[rY]) * fp_f32_to_float(self.reg[rZ]))
         self.step_pc()
 
-    def op_divf(self, args: list[int]):
-        self.reg[args[0]] = fp_float_to_f32(fp_f32_to_float(self.reg[args[1]]) / fp_f32_to_float(self.reg[args[2]]))
+    def op_divf(self, rX: int, rY: int, rZ: int):
+        self.reg[rX] = fp_float_to_f32(fp_f32_to_float(self.reg[rY]) / fp_f32_to_float(self.reg[rZ]))
         self.step_pc()
 
     # Bitwise instructions
 
-    def op_and(self, args: list[int]):
-        self.reg[args[0]] = self.reg[args[1]] & self.reg[args[2]]
+    def op_and(self, rX: int, rY: int, rZ: int):
+        self.reg[rX] = self.reg[rY] & self.reg[rZ]
         self.step_pc()
 
-    def op_or(self, args: list[int]):
-        self.reg[args[0]] = self.reg[args[1]] | self.reg[args[2]]
+    def op_or(self, rX: int, rY: int, rZ: int):
+        self.reg[rX] = self.reg[rY] | self.reg[rZ]
         self.step_pc()
 
-    def op_xor(self, args: list[int]):
-        self.reg[args[0]] = self.reg[args[1]] ^ self.reg[args[2]]
+    def op_xor(self, rX: int, rY: int, rZ: int):
+        self.reg[rX] = self.reg[rY] ^ self.reg[rZ]
         self.step_pc()
 
-    def op_not(self, args: list[int]):
-        self.reg[args[0]] = ~self.reg[args[1]]
+    def op_not(self, rX: int, rY: int):
+        self.reg[rX] = ~self.reg[rY]
         self.step_pc()
 
-    def op_lshl(self, args: list[int]):
-        self.reg[args[0]] = (self.reg[args[1]] << self.reg[args[2]]) & 0xffffffff
+    def op_lshl(self, rX: int, rY: int, rZ: int):
+        self.reg[rX] = (self.reg[rY] << self.reg[rZ]) & 0xffffffff
         self.step_pc()
 
-    def op_lshr(self, args: list[int]):
-        self.reg[args[0]] = (self.reg[args[1]] >> self.reg[args[2]]) & 0xffffffff
-        self.step_pc()
-
-    # TODO: verify this
-    def op_ashl(self, args: list[int]):
-        sign = self.reg[args[1]] & (1 << 31)
-        temp = ((self.reg[args[1]] ^ sign) << self.reg[args[2]]) & 0xffffffff
-        self.reg[args[0]] = 0 if temp == 0 else temp | sign
+    def op_lshr(self, rX: int, rY: int, rZ: int):
+        self.reg[rX] = (self.reg[rY] >> self.reg[rZ]) & 0xffffffff
         self.step_pc()
 
     # TODO: verify this
-    def op_ashr(self, args: list[int]):
-        num_shifts = tc_b32_to_int(self.reg[args[2]])
-        sign = self.reg[args[1]] & (1 << 31)
+    def op_ashl(self, rX: int, rY: int, rZ: int):
+        sign = self.reg[rY] & (1 << 31)
+        temp = ((self.reg[rY] ^ sign) << self.reg[rZ]) & 0xffffffff
+        self.reg[rX] = 0 if temp == 0 else temp | sign
+        self.step_pc()
+
+    # TODO: verify this
+    def op_ashr(self, rX: int, rY: int, rZ: int):
+        num_shifts = tc_b32_to_int(self.reg[rZ])
+        sign = self.reg[rY] & (1 << 31)
         sign_extend = int("1" * num_shifts, 2) if sign else 0
-        temp = ((self.reg[args[1]] ^ sign) >> self.reg[args[2]]) | (sign_extend << (31 - num_shifts))
-        self.reg[args[0]] = 0 if temp == 0 else temp | sign
+        temp = ((self.reg[rY] ^ sign) >> num_shifts) | (sign_extend << (31 - num_shifts))
+        self.reg[rX] = 0 if temp == 0 else temp | sign
         self.step_pc()
 
     # Jump Instructions
 
-    def op_jump(self, args: list[int]):
-        self.pc = args[0]
+    def op_jump(self, addr: int):
+        self.pc = addr
 
-    def op_jra(self, args: list[int]):
-        self.pc = self.reg[args[0]]
+    def op_jra(self, rX: int):
+        self.pc = self.reg[rX]
 
-    def op_jeqz(self, args: list[int]):
+    def op_jeqz(self, rX: int, addr: int):
         self.pc = (
-            args[1]
-            if tc_b32_to_int(self.reg[args[0]]) == 0
+            addr
+            if tc_b32_to_int(self.reg[rX]) == 0
             else self.pc + WORD_SIZE
         )
 
-    def op_jnez(self, args: list[int]):
+    def op_jnez(self, rX: int, addr: int):
         self.pc = (
-            args[1]
-            if tc_b32_to_int(self.reg[args[0]]) != 0
+            addr
+            if tc_b32_to_int(self.reg[rX]) != 0
             else self.pc + WORD_SIZE
         )
 
-    def op_jge(self, args: list[int]):
+    def op_jge(self, rX: int, rY: int, addr: int):
         self.pc = (
-            args[2]
-            if tc_b32_to_int(self.reg[args[0]]) >= tc_b32_to_int(self.reg[args[1]])
+            addr
+            if tc_b32_to_int(self.reg[rX]) >= tc_b32_to_int(self.reg[rY])
             else self.pc + WORD_SIZE
         )
 
-    def op_jle(self, args: list[int]):
+    def op_jle(self, rX: int, rY: int, addr: int):
         self.pc = (
-            args[2]
-            if tc_b32_to_int(self.reg[args[0]]) <= tc_b32_to_int(self.reg[args[1]])
+            addr
+            if tc_b32_to_int(self.reg[rX]) <= tc_b32_to_int(self.reg[rY])
             else self.pc + WORD_SIZE
         )
 
-    def op_jeq(self, args: list[int]):
+    def op_jeq(self, rX: int, rY: int, addr: int):
         self.pc = (
-            args[2]
-            if tc_b32_to_int(self.reg[args[0]]) == tc_b32_to_int(self.reg[args[1]])
+            addr
+            if tc_b32_to_int(self.reg[rX]) == tc_b32_to_int(self.reg[rY])
             else self.pc + WORD_SIZE
         )
 
-    def op_jne(self, args: list[int]):
+    def op_jne(self, rX: int, rY: int, addr: int):
         self.pc = (
-            args[2]
-            if tc_b32_to_int(self.reg[args[0]]) != tc_b32_to_int(self.reg[args[1]])
+            addr
+            if tc_b32_to_int(self.reg[rX]) != tc_b32_to_int(self.reg[rY])
             else self.pc + WORD_SIZE
         )
 
-    def op_jgt(self, args: list[int]):
+    def op_jgt(self, rX: int, rY: int, addr: int):
         self.pc = (
-            args[2]
-            if tc_b32_to_int(self.reg[args[0]]) > tc_b32_to_int(self.reg[args[1]])
+            addr
+            if tc_b32_to_int(self.reg[rX]) > tc_b32_to_int(self.reg[rY])
             else self.pc + WORD_SIZE
         )
 
-    def op_jlt(self, args: list[int]):
+    def op_jlt(self, rX: int, rY: int, addr: int):
         self.pc = (
-            args[2]
-            if tc_b32_to_int(self.reg[args[0]]) < tc_b32_to_int(self.reg[args[1]])
+            addr
+            if tc_b32_to_int(self.reg[rX]) < tc_b32_to_int(self.reg[rY])
             else self.pc + WORD_SIZE
         )
 
-    def op_jsr(self, args: list[int]):
-        # I think this is guaranteed to never be over integer limit
-        self.reg[args[0]] = self.pc + WORD_SIZE
-        self.pc = args[1]
+    def op_jsr(self, rX: int, addr: int):
+        self.reg[rX] = tc_int_to_b32(self.pc + WORD_SIZE)
+        self.pc = addr
 
     # Register instructions
 
-    def op_seti(self, args: list[int]):
-        self.reg[args[0]] = tc_b16_to_b32(args[1])
+    def op_seti(self, rX: int, val: int):
+        self.reg[rX] = tc_b16_to_b32(val)
         self.step_pc()
 
-    def op_inci(self, args: list[int]):
-        self.reg[args[0]] = tc_add(self.reg[args[0]], tc_b16_to_b32(args[1]))
+    def op_inci(self, rX: int, val: int):
+        self.reg[rX] = tc_add(self.reg[rX], tc_b16_to_b32(val))
         self.step_pc()
 
-    def op_setf(self, args: list[int]):
-        self.reg[args[0]] = fp_f16_to_f32(args[1])
+    def op_setf(self, rX: int, val: int):
+        self.reg[rX] = fp_f16_to_f32(val)
         self.step_pc()
 
-    def op_incf(self, args: list[int]):
-        self.reg[args[0]] = fp_float_to_f32(fp_f32_to_float(self.reg[args[0]]) + fp_f32_to_float(self.reg[args[1]]))
+    def op_incf(self, rX: int, val: int):
+        # TODO: implement fp_f16_to_float
+        # self.reg[rX] = fp_float_to_f32(fp_f32_to_float(self.reg[rX]) + fp_f16_to_float(val))
         self.step_pc()
 
-    def op_copy(self, args: list[int]):
-        self.reg[args[0]] = self.reg[args[1]]
+    def op_copy(self, rX: int, rY: int):
+        self.reg[rX] = self.reg[rY]
+        self.step_pc()
+
+    def op_seta(self, rX: int, val: int):
+        self.reg[rX] = tc_int_to_b32(val)
         self.step_pc()
 
     # Stack instructions
 
-    # TODO: clean up generic code for single bytes etc
-
-    def op_pushb(self, args: list[int]):
+    def op_pushb(self, rX: int, rY: int):
         if self.reg[reg_to_bin["sp"]] <= self.reg[reg_to_bin["gp"]]:
             sys.exit(f"Error: stack overflow attempting to execute instruction {self.get_instruction()}; halting the machine")
-        addr = tc_b32_to_int(self.reg[args[1]])
-        byte = self.reg[args[0]]
+        addr = tc_b32_to_int(self.reg[rY])
+        byte = self.reg[rX]
         self.store_byte(addr, byte)
-        self.reg[args[1]] = tc_int_to_b32(addr - BYTE_SIZE)
+        self.reg[rY] = tc_int_to_b32(addr - BYTE_SIZE)
         self.step_pc()
 
-    def op_pushs(self, args: list[int]):
+    def op_pushs(self, rX: int, rY: int):
         if self.reg[reg_to_bin["sp"]] <= self.reg[reg_to_bin["gp"]]:
             sys.exit(f"Error: stack overflow attempting to execute instruction {self.get_instruction()}; halting the machine")
-        addr = tc_b32_to_int(self.reg[args[1]])
-        short = self.reg[args[0]]
+        addr = tc_b32_to_int(self.reg[rY])
+        short = self.reg[rX]
         self.store_short(addr - 1, short)
-        self.reg[args[1]] = tc_int_to_b32(addr - SHORT_SIZE)
+        self.reg[rY] = tc_int_to_b32(addr - SHORT_SIZE)
         self.step_pc()
 
-    def op_pushw(self, args: list[int]):
+    def op_pushw(self, rX: int, rY: int):
         if self.reg[reg_to_bin["sp"]] <= self.reg[reg_to_bin["gp"]]:
             sys.exit(f"Error: stack overflow attempting to execute instruction {self.get_instruction()}; halting the machine")
-        addr = tc_b32_to_int(self.reg[args[1]])
-        word = self.reg[args[0]]
+        addr = tc_b32_to_int(self.reg[rY])
+        word = self.reg[rX]
         self.store_word(addr - 3, word)
-        self.reg[args[1]] = tc_int_to_b32(addr - WORD_SIZE)
+        self.reg[rY] = tc_int_to_b32(addr - WORD_SIZE)
         self.step_pc()
 
-    def op_popb(self, args: list[int]):
-        addr = tc_b32_to_int(self.reg[args[1]]) + BYTE_SIZE
-        self.reg[args[1]] = tc_int_to_b32(addr)
-        self.reg[args[0]] = self.load_byte(addr)
+    def op_popb(self, rX: int, rY: int):
+        addr = tc_b32_to_int(self.reg[rY]) + BYTE_SIZE
+        self.reg[rY] = tc_int_to_b32(addr)
+        self.reg[rX] = self.load_byte(addr)
         self.step_pc()
 
-    def op_pops(self, args: list[int]):
-        addr = tc_b32_to_int(self.reg[args[1]]) + SHORT_SIZE
-        self.reg[args[1]] = tc_int_to_b32(addr)
-        self.reg[args[0]] = self.load_short(addr - SHORT_SIZE + 1)
+    def op_pops(self, rX: int, rY: int):
+        addr = tc_b32_to_int(self.reg[rY]) + SHORT_SIZE
+        self.reg[rY] = tc_int_to_b32(addr)
+        self.reg[rX] = self.load_short(addr - SHORT_SIZE + 1)
         self.step_pc()
 
-    def op_popw(self, args: list[int]):
-        addr = tc_b32_to_int(self.reg[args[1]]) + WORD_SIZE
-        self.reg[args[1]] = tc_int_to_b32(addr)
-        self.reg[args[0]] = self.load_word(addr - WORD_SIZE + 1)
+    def op_popw(self, rX: int, rY: int):
+        addr = tc_b32_to_int(self.reg[rY]) + WORD_SIZE
+        self.reg[rY] = tc_int_to_b32(addr)
+        self.reg[rX] = self.load_word(addr - WORD_SIZE + 1)
         self.step_pc()
 
     # Load/store stack instructions
 
-    def op_ldbn(self, args: list[int]):
-        addr = tc_b32_to_int(self.reg[args[1]])
-        offset = tc_b16_to_int(args[2])
-        self.reg[args[0]] = self.load_byte(addr + offset)
+    def op_ldbn(self, rX: int, rY: int, offset: int):
+        addr = tc_b32_to_int(self.reg[rY])
+        offset = tc_b16_to_int(offset)
+        self.reg[rX] = self.load_byte(addr + offset)
         self.step_pc()
 
-    def op_ldsn(self, args: list[int]):
-        addr = tc_b32_to_int(self.reg[args[1]])
-        offset = tc_b16_to_int(args[2])
-        self.reg[args[0]] = self.load_short(addr + offset - SHORT_SIZE + 1)
+    def op_ldsn(self, rX: int, rY: int, offset: int):
+        addr = tc_b32_to_int(self.reg[rY])
+        offset = tc_b16_to_int(offset)
+        self.reg[rX] = self.load_short(addr + offset - SHORT_SIZE + 1)
         self.step_pc()
 
-    def op_ldwn(self, args: list[int]):
-        addr = tc_b32_to_int(self.reg[args[1]])
-        offset = tc_b16_to_int(args[2])
-        self.reg[args[0]] = self.load_word(addr + offset - WORD_SIZE + 1)
+    def op_ldwn(self, rX: int, rY: int, offset: int):
+        addr = tc_b32_to_int(self.reg[rY])
+        offset = tc_b16_to_int(offset)
+        self.reg[rX] = self.load_word(addr + offset - WORD_SIZE + 1)
         self.step_pc()
 
-    def op_stbn(self, args: list[int]):
-        addr = tc_b32_to_int(self.reg[args[1]])
-        offset = tc_b16_to_int(args[2])
-        byte = self.reg[args[0]]
+    def op_stbn(self, rX: int, rY: int, offset: int):
+        addr = tc_b32_to_int(self.reg[rY])
+        offset = tc_b16_to_int(offset)
+        byte = self.reg[rX]
         self.store_byte(addr + offset, byte)
         self.step_pc()
 
-    def op_stsn(self, args: list[int]):
-        addr = tc_b32_to_int(self.reg[args[1]])
-        offset = tc_b16_to_int(args[2])
-        short = self.reg[args[0]]
+    def op_stsn(self, rX: int, rY: int, offset: int):
+        addr = tc_b32_to_int(self.reg[rY])
+        offset = tc_b16_to_int(offset)
+        short = self.reg[rX]
         self.store_short(addr + offset - SHORT_SIZE + 1, short)
         self.step_pc()
 
-    def op_stwn(self, args: list[int]):
-        addr = tc_b32_to_int(self.reg[args[1]])
-        offset = tc_b16_to_int(args[2])
-        word = self.reg[args[0]]
+    def op_stwn(self, rX: int, rY: int, offset: int):
+        addr = tc_b32_to_int(self.reg[rY])
+        offset = tc_b16_to_int(offset)
+        word = self.reg[rX]
         self.store_word(addr + offset - WORD_SIZE + 1, word)
         self.step_pc()
 
-    def op_ldbr(self, args: list[int]):
-        addr = tc_b32_to_int(self.reg[args[1]])
-        self.reg[args[0]] = self.load_byte(addr)
+    def op_ldbr(self, rX: int, rY: int):
+        addr = tc_b32_to_int(self.reg[rY])
+        self.reg[rX] = self.load_byte(addr)
         self.step_pc()
 
-    def op_ldsr(self, args: list[int]):
-        addr = tc_b32_to_int(self.reg[args[1]])
-        self.reg[args[0]] = self.load_short(addr - SHORT_SIZE + 1)
+    def op_ldsr(self, rX: int, rY: int):
+        addr = tc_b32_to_int(self.reg[rY])
+        self.reg[rX] = self.load_short(addr - SHORT_SIZE + 1)
         self.step_pc()
 
-    def op_ldwr(self, args: list[int]):
-        addr = tc_b32_to_int(self.reg[args[1]])
-        self.reg[args[0]] = self.load_word(addr - WORD_SIZE + 1)
+    def op_ldwr(self, rX: int, rY: int):
+        addr = tc_b32_to_int(self.reg[rY])
+        self.reg[rX] = self.load_word(addr - WORD_SIZE + 1)
         self.step_pc()
 
-    def op_stbr(self, args: list[int]):
-        addr = tc_b32_to_int(self.reg[args[1]])
-        byte = self.reg[args[0]]
+    def op_stbr(self, rX: int, rY: int):
+        addr = tc_b32_to_int(self.reg[rY])
+        byte = self.reg[rX]
         self.store_byte(addr, byte)
         self.step_pc()
 
-    def op_stsr(self, args: list[int]):
-        addr = tc_b32_to_int(self.reg[args[1]])
-        short = self.reg[args[0]]
+    def op_stsr(self, rX: int, rY: int):
+        addr = tc_b32_to_int(self.reg[rY])
+        short = self.reg[rX]
         self.store_short(addr - SHORT_SIZE + 1, short)
         self.step_pc()
 
-    def op_stwr(self, args: list[int]):
-        addr = tc_b32_to_int(self.reg[args[1]])
-        word = self.reg[args[0]]
+    def op_stwr(self, rX: int, rY: int):
+        addr = tc_b32_to_int(self.reg[rY])
+        word = self.reg[rX]
         self.store_word(addr - WORD_SIZE + 1, word)
         self.step_pc()
 
     # Load/store heap instruction
 
-    def op_ldba(self, args: list[int]):
-        self.reg[args[0]] = self.load_byte(args[1])
+    def op_ldba(self, rX: int, addr: int):
+        self.reg[rX] = self.load_byte(addr)
         self.step_pc()
 
-    def op_ldsa(self, args: list[int]):
-        self.reg[args[0]] = self.load_short(args[1])
+    def op_ldsa(self, rX: int, addr: int):
+        self.reg[rX] = self.load_short(addr)
         self.step_pc()
 
-    def op_ldwa(self, args:list[int]):
-        self.reg[args[0]] = self.load_word(args[1])
+    def op_ldwa(self, rX: int, addr: int):
+        self.reg[rX] = self.load_word(addr)
         self.step_pc()
 
-    def op_stba(self, args: list[int]):
-        self.store_byte(args[1], args[0])
+    def op_stba(self, rX: int, addr: int):
+        self.store_byte(addr, self.reg[rX])
         self.step_pc()
 
-    def op_stsa(self, args: list[int]):
-        self.store_short(args[1], args[0])
+    def op_stsa(self, rX: int, addr: int):
+        self.store_short(addr, self.reg[rX])
         self.step_pc()
 
-    def op_stwa(self, args: list[int]):
-        self.store_word(args[1], args[0])
+    def op_stwa(self, rX: int, addr: int):
+        self.store_word(addr, self.reg[rX])
         self.step_pc()
 
     # array instructions
 
-    def op_anewb(self, args: list[int]):
-        arrlen = tc_b16_to_int(args[1])
-        addr = self.reg[args[0]]
+    # TODO: change to rX rY
+    def op_anewb(self, rX: int, len: int):
+        arrlen = tc_b16_to_int(len)
+        addr = self.reg[rX]
         self.store_short(addr, arrlen)
         for i in range(2, 2 + arrlen):
             self.mem[addr + i] = 0
         self.step_pc()
 
-    def op_anews(self, args: list[int]):
-        arrlen = tc_b16_to_int(args[1])
-        addr = self.reg[args[0]]
+    def op_anews(self, rX: int, len: int):
+        arrlen = tc_b16_to_int(len)
+        addr = (self.reg[rX])
         self.store_short(addr, arrlen)
         for i in range(SHORT_SIZE, SHORT_SIZE + arrlen * SHORT_SIZE):
             self.mem[addr + i] = 0
         self.step_pc()
 
-    def op_aneww(self, args: list[int]):
-        arrlen = tc_b16_to_int(args[1])
-        addr = self.reg[args[0]]
+    def op_aneww(self, rX: int, len: int):
+        arrlen = tc_b16_to_int(len)
+        addr = self.reg[rX]
         self.store_short(addr, arrlen)
         for i in range(SHORT_SIZE, SHORT_SIZE + arrlen * WORD_SIZE):
             self.mem[addr + i] = 0
         self.step_pc()
 
-    def op_aldb(self, args: list[int]):
-        addr = self.reg[args[1]]
+    def op_aldb(self, rX: int, rY: int, rZ: int):
+        addr = tc_b32_to_int(self.reg[rY])
         arrlen = self.load_short(addr)
-        index = tc_b16_to_int(self.reg[args[2]])
+        index = tc_b16_to_int(self.reg[rZ])
         if index > arrlen - 1:
             sys.exit(f"Error: out of bounds array access at instruction {self.get_instruction()}; halting the machine")
         offset = SHORT_SIZE + index
-        self.reg[args[0]] = self.load_byte(addr + offset)
+        self.reg[rX] = self.load_byte(addr + offset)
         self.step_pc()
 
-    def op_alds(self, args: list[int]):
-        addr = self.reg[args[1]]
+    def op_alds(self, rX: int, rY: int, rZ: int):
+        addr = tc_b32_to_int(self.reg[rY])
         arrlen = self.load_short(addr)
-        index = tc_b16_to_int(self.reg[args[2]])
+        index = tc_b16_to_int(self.reg[rZ])
         if index > arrlen - 1:
             sys.exit(f"Error: out of bounds array access at instruction {self.get_instruction()}; halting the machine")
         offset = SHORT_SIZE + index * SHORT_SIZE
-        self.reg[args[0]] = self.load_short(addr + offset)
+        self.reg[rX] = self.load_short(addr + offset)
         self.step_pc()
 
-    def op_aldw(self, args: list[int]):
-        addr = self.reg[args[1]]
+    def op_aldw(self, rX: int, rY: int, rZ: int):
+        addr = tc_b32_to_int(self.reg[rY])
         arrlen = self.load_short(addr)
-        index = tc_b16_to_int(self.reg[args[2]])
+        index = tc_b16_to_int(self.reg[rZ])
         if index > arrlen - 1:
             sys.exit(f"Error: out of bounds array access at instruction {self.get_instruction()}; halting the machine")
         offset = SHORT_SIZE + index * WORD_SIZE
-        self.reg[args[0]] = self.load_word(addr + offset)
+        self.reg[rX] = self.load_word(addr + offset)
         self.step_pc()
 
-    def op_astb(self, args: list[int]):
-        addr = self.reg[args[1]]
+    def op_astb(self, rX: int, rY: int, rZ: int):
+        addr = tc_b32_to_int(self.reg[rY])
         arrlen = self.load_short(addr)
-        index = tc_b16_to_int(self.reg[args[2]])
+        index = tc_b16_to_int(self.reg[rZ])
         if index > arrlen - 1:
             sys.exit(f"Error: out of bounds array access at instruction {self.get_instruction()}; halting the machine")
         offset = SHORT_SIZE + index
-        self.store_byte(addr + offset, self.reg[args[0]])
+        self.store_byte(addr + offset, self.reg[rX])
         self.step_pc()
 
-    def op_asts(self, args: list[int]):
-        addr = self.reg[args[1]]
+    def op_asts(self, rX: int, rY: int, rZ: int):
+        addr = tc_b32_to_int(self.reg[rY])
         arrlen = self.load_short(addr)
-        index = tc_b16_to_int(self.reg[args[2]])
+        index = tc_b16_to_int(self.reg[rZ])
         if index > arrlen - 1:
             sys.exit(f"Error: out of bounds array access at instruction {self.get_instruction()}; halting the machine")
         offset = SHORT_SIZE + index * SHORT_SIZE
-        self.store_short(addr + offset, self.reg[args[0]])
+        self.store_short(addr + offset, self.reg[rX])
         self.step_pc()
 
-    def op_astw(self, args: list[int]):
-        addr = self.reg[args[1]]
+    def op_astw(self, rX: int, rY: int, rZ: int):
+        addr = tc_b32_to_int(self.reg[rY])
         arrlen = self.load_short(addr)
-        index = tc_b16_to_int(self.reg[args[2]])
+        index = tc_b16_to_int(self.reg[rZ])
         if index > arrlen - 1:
             sys.exit(f"Error: out of bounds array access at instruction {self.get_instruction()}; halting the machine")
         offset = SHORT_SIZE + index * WORD_SIZE
-        self.store_word(addr + offset, self.reg[args[0]])
+        self.store_word(addr + offset, self.reg[rX])
         self.step_pc()
 
-    def op_alen(self, args: list[int]):
-        addr = self.reg[args[1]]
-        self.reg[args[0]] = self.load_short(addr)
+    def op_alen(self, rX: int, rY: int):
+        addr = tc_b32_to_int(self.reg[rY])
+        self.reg[rX] = self.load_short(addr)
         self.step_pc()
 
     def store_byte(self, addr: int, byte: int):
