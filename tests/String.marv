@@ -1,7 +1,7 @@
 .data
     .string msg = "Hello, world!\n"
 .text
-    seti   r0 msg       # store address of msg
+    seta   r0 msg       # store address of msg
     alen   r1 r0        # r0 = len(msg)
     seti   r2 0         # index = 0
 print:

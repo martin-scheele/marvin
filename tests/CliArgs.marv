@@ -1,6 +1,6 @@
 .text
 start:
-    seti    r0 argv             # r0 := $argv
+    seta    r0 argv             # r0 := $argv
     alen    r1 r0               # r1 := len(argv)
     seti    r2 0                # i := 0
 outer:
