@@ -22,9 +22,11 @@ the emulator prints the assembled instructions to stdout before simulating them.
 # Maps opcodes to their binary 8-bit codes.
 opcode_to_bin = {
     # system instructions
-    "halt":   0b00000000, "readi":  0b00000001, "readf":  0b00000010, "readc": 0b00000011,
-    "writei": 0b00000100, "writef": 0b00000101, "writec": 0b00000110, "seed":  0b00000111,
-    "rand":   0b00001000, "time":   0b00001001, "date":   0b00001010, "nop":   0b00001111,
+    "halt":   0b00000000, 
+    "readi":  0b00000001, "readf":  0b00000010, "readc":  0b00000011,
+    "writei": 0b00000100, "writef": 0b00000101, "writec": 0b00000110, "writes": 0b00000111,
+    "seed":   0b00001000, "rand":   0b00001001, "time":   0b00001010, "date":   0b00001011,
+    "nop":    0b00001111,
     # arithmetic instructions
     "addi":   0b00010000, "subi":   0b00010001, "muli":   0b00010010, "divi":  0b00010011,
     "modi":   0b00010100, "negi":   0b00010101, "addf":   0b00010110, "subf":  0b00010111,
@@ -54,6 +56,10 @@ opcode_to_bin = {
     "aldb":   0b10000011, "alds":   0b10000100, "aldw":   0b10000101,
     "astb":   0b10000110, "asts":   0b10000111, "astw":   0b10001000,
     "alen":   0b10001001,
+    # conversion instructions
+    "i2f":    0b10010000,
+    "i2c":    0b10010001,
+    "f2i":    0b10010010
 }
 
 # Maps 8-bit binary codes to the opcodes they represent.
@@ -62,22 +68,24 @@ bin_to_opcode = {opcode_to_bin[opcode]: opcode for opcode in opcode_to_bin.keys(
 # Maps opcodes to their symbolic argument masks.
 opcode_to_argmask = {
     # system instructions
-    "halt":   "",    "readi":  "r",   "readf":  "r",   "readc": "r",
-    "writei": "r",   "writef": "r",   "writec": "r",   "seed":  "r",
-    "rand":   "rrr", "time":   "r",   "date":   "r",   "nop":   "",
+    "halt":   "",
+    "readi":  "r",   "readf":  "r",   "readc": "r",
+    "writei": "r",   "writef": "r",   "writec": "r",   "writes": "r",
+    "seed":   "r",
+    "rand":   "rrr", "time":   "r",   "date":   "r",   "nop":    "",
     # arithmetic instructions
-    "addi":   "rrr", "subi":   "rrr", "muli":   "rrr", "divi":  "rrr",
-    "modi":   "rrr", "negi":   "rr",  "addf":   "rrr", "subf":  "rrr",
+    "addi":   "rrr", "subi":   "rrr", "muli":   "rrr", "divi":   "rrr",
+    "modi":   "rrr", "negi":   "rr",  "addf":   "rrr", "subf":   "rrr",
     "mulf":   "rrr", "divf":   "rrr", "negf":   "rr",
     # bitwise instructions
-    "and":    "rrr", "or":     "rrr", "xor":    "rrr", "not":   "rrr",
-    "lshl":   "rr",  "lshr":   "rr",  "ashl":   "rr",  "ashr":  "rr",
+    "and":    "rrr", "or":     "rrr", "xor":    "rrr", "not":    "rrr",
+    "lshl":   "rr",  "lshr":   "rr",  "ashl":   "rr",  "ashr":   "rr",
     # jump instructions
-    "jump":   "l",   "jra":    "r",   "jeqz":   "rl",  "jnez":  "rl",
-    "jge":    "rrl", "jle":    "rrl", "jeq":    "rrl", "jne":   "rrl",
+    "jump":   "l",   "jra":    "r",   "jeqz":   "rl",  "jnez":   "rl",
+    "jge":    "rrl", "jle":    "rrl", "jeq":    "rrl", "jne":    "rrl",
     "jgt":    "rrl", "jlt":    "rrl", "jsr":    "rl",
     # register instructions
-    "seti":   "rn",  "inci":   "rn",  "setf":   "rf",  "incf":  "rf",
+    "seti":   "rn",  "inci":   "rn",  "setf":   "rf",  "incf":   "rf",
     "copy":   "rr",  "seta":   "ra",
     # stack insructions
     "pushb":  "rr",  "popb":   "rr",
@@ -91,10 +99,14 @@ opcode_to_argmask = {
     "ldba":   "ra",  "ldsa":   "ra",  "ldwa":   "ra",
     "stba":   "ra",  "stsa":   "ra",  "stwa":   "ra",
     # array instructions
-    "anewb":  "rn",  "anews":  "rn",  "aneww":  "rn",
+    "anewb":  "rr",  "anews":  "rr",  "aneww":  "rr",
     "aldb":   "rrr", "alds":   "rrr", "aldw":   "rrr",
     "astb":   "rrr", "asts":   "rrr", "astw":   "rrr",
     "alen":   "rr",
+    # conversion instructions
+    "i2f":    "rr",
+    "i2c":    "rr",
+    "f2i":    "rr"
 }
 
 # Maps register names to their binary 4-bit codes.
@@ -249,7 +261,7 @@ class CPU:
             try:
                 self.ir = self.load_word(self.pc)
             except IndexError:
-                sys.exit(f"Error: attempted to execute instruction {self.get_instruction()}; halting the machine")
+                sys.exit(f"Error: attempted to execute instruction {self.get_pc_line()}; halting the machine")
 
             self.debug_exec()
 
@@ -265,12 +277,13 @@ class CPU:
     def debug_exec(self):
         if not self.debug:
             return
-        if self.get_instruction() in self.breakpoints:
+        if self.get_pc_line() in self.breakpoints:
             pass
         elif self.debug_continue_flag:
             return
 
-        print(f"{self.get_instruction()} {self.program.lines[self.program.pc_to_abs_line[self.get_instruction()]]}", end="\n\n")
+        print(f"{self.get_pc_line()} {self.program.lines[self.program.pc_to_abs_line[self.get_pc_line()]]}")
+        print()
 
         # Get debug input.
         while cmd := input("(dbg) "):
@@ -286,7 +299,7 @@ class CPU:
                 break
             elif cmd == "b" or cmd == "break":
                 if not args:
-                    self.breakpoints.add(self.get_instruction())
+                    self.breakpoints.add(self.get_pc_line())
                 try:
                     self.breakpoints.add(int(args[0]))
                 except ValueError:
@@ -410,8 +423,8 @@ List of commands:
                 # TODO: handle spacing more robustly
                 # TODO: hex memory address instead of instruction number?
                 line_prefix = ""
+                line_prefix += ">" if pc == self.get_pc_line() else " "
                 line_prefix += "*" if pc in self.breakpoints else " "
-                line_prefix += ">" if pc == self.get_instruction() else " "
                 print(f"{line_prefix}{pc :>4} {line :<30}", end="")
                 print(" ".join([format(b, "08b") for b in self.mem[pc * 4:pc * 4 + 4]]))
             else:
@@ -488,13 +501,22 @@ List of commands:
         print(self.reg[rX].to_bytes(2, 'big').decode("utf-16-be"), end="")
         self.step_pc()
 
+    def op_writes(self, rX: int):
+        addr = tc_b32_to_int(self.reg[rX])
+        arrlen = self.load_short(addr)
+        # TODO: this approach is ugly, stop doing this
+        for i in range(SHORT_SIZE, SHORT_SIZE + SHORT_SIZE * arrlen, SHORT_SIZE):
+            char = self.load_short(addr + i).to_bytes(2, 'big').decode("utf-16-be")
+            print(char, end="")
+        self.step_pc()
+
     def op_seed(self, rX: int):
         random.seed((self.reg[rX]))
         self.step_pc()
 
     def op_rand(self, rX: int, rY: int, rZ: int):
-        lo = tc_b32_to_int(self.reg[rX])
-        hi = tc_b32_to_int(self.reg[rY])
+        lo = tc_b32_to_int(self.reg[rY])
+        hi = tc_b32_to_int(self.reg[rZ])
         self.reg[rX] = tc_int_to_b32(random.randint(lo, hi))
         self.step_pc()
 
@@ -688,8 +710,7 @@ List of commands:
         self.step_pc()
 
     def op_incf(self, rX: int, val: int):
-        # TODO: implement fp_f16_to_float
-        # self.reg[rX] = fp_float_to_f32(fp_f32_to_float(self.reg[rX]) + fp_f16_to_float(val))
+        self.reg[rX] = fp_float_to_f32(fp_f32_to_float(self.reg[rX]) + fp_f16_to_float(val))
         self.step_pc()
 
     def op_copy(self, rX: int, rY: int):
@@ -704,7 +725,7 @@ List of commands:
 
     def op_pushb(self, rX: int, rY: int):
         if self.reg[reg_to_bin["sp"]] <= self.reg[reg_to_bin["gp"]]:
-            sys.exit(f"Error: stack overflow attempting to execute instruction {self.get_instruction()}; halting the machine")
+            sys.exit(f"Error: stack overflow attempting to execute instruction {self.get_pc_line()}; halting the machine")
         addr = tc_b32_to_int(self.reg[rY])
         byte = self.reg[rX]
         self.store_byte(addr, byte)
@@ -713,7 +734,7 @@ List of commands:
 
     def op_pushs(self, rX: int, rY: int):
         if self.reg[reg_to_bin["sp"]] <= self.reg[reg_to_bin["gp"]]:
-            sys.exit(f"Error: stack overflow attempting to execute instruction {self.get_instruction()}; halting the machine")
+            sys.exit(f"Error: stack overflow attempting to execute instruction {self.get_pc_line()}; halting the machine")
         addr = tc_b32_to_int(self.reg[rY])
         short = self.reg[rX]
         self.store_short(addr - 1, short)
@@ -722,7 +743,7 @@ List of commands:
 
     def op_pushw(self, rX: int, rY: int):
         if self.reg[reg_to_bin["sp"]] <= self.reg[reg_to_bin["gp"]]:
-            sys.exit(f"Error: stack overflow attempting to execute instruction {self.get_instruction()}; halting the machine")
+            sys.exit(f"Error: stack overflow attempting to execute instruction {self.get_pc_line()}; halting the machine")
         addr = tc_b32_to_int(self.reg[rY])
         word = self.reg[rX]
         self.store_word(addr - 3, word)
@@ -849,28 +870,30 @@ List of commands:
 
     # array instructions
 
-    # TODO: change to rX rY
-    def op_anewb(self, rX: int, len: int):
-        arrlen = tc_b16_to_int(len)
-        addr = self.reg[rX]
-        self.store_short(addr, arrlen)
-        for i in range(2, 2 + arrlen):
+    def op_anewb(self, rX: int, rY: int):
+        addr = tc_b32_to_int(self.reg[rX])
+        len = self.reg[rY]
+        self.store_short(addr, len)
+        # TODO: ensure len > 0
+        for i in range(2, 2 + len):
             self.mem[addr + i] = 0
         self.step_pc()
 
-    def op_anews(self, rX: int, len: int):
-        arrlen = tc_b16_to_int(len)
-        addr = (self.reg[rX])
-        self.store_short(addr, arrlen)
-        for i in range(SHORT_SIZE, SHORT_SIZE + arrlen * SHORT_SIZE):
+    def op_anews(self, rX: int, rY: int):
+        addr = tc_b32_to_int(self.reg[rX])
+        len = self.reg[rY]
+        self.store_short(addr, len)
+        # TODO: ensure len > 0
+        for i in range(SHORT_SIZE, SHORT_SIZE + len * SHORT_SIZE):
             self.mem[addr + i] = 0
         self.step_pc()
 
-    def op_aneww(self, rX: int, len: int):
-        arrlen = tc_b16_to_int(len)
-        addr = self.reg[rX]
-        self.store_short(addr, arrlen)
-        for i in range(SHORT_SIZE, SHORT_SIZE + arrlen * WORD_SIZE):
+    def op_aneww(self, rX: int, rY: int):
+        addr = tc_b32_to_int(self.reg[rX])
+        len = self.reg[rY]
+        self.store_short(addr, len)
+        # TODO: ensure len > 0
+        for i in range(SHORT_SIZE, SHORT_SIZE + len * WORD_SIZE):
             self.mem[addr + i] = 0
         self.step_pc()
 
@@ -879,7 +902,7 @@ List of commands:
         arrlen = self.load_short(addr)
         index = tc_b16_to_int(self.reg[rZ])
         if index > arrlen - 1:
-            sys.exit(f"Error: out of bounds array access at instruction {self.get_instruction()}; halting the machine")
+            sys.exit(f"Error: out of bounds array access at instruction {self.get_pc_line()}; halting the machine")
         offset = SHORT_SIZE + index
         self.reg[rX] = self.load_byte(addr + offset)
         self.step_pc()
@@ -889,7 +912,7 @@ List of commands:
         arrlen = self.load_short(addr)
         index = tc_b16_to_int(self.reg[rZ])
         if index > arrlen - 1:
-            sys.exit(f"Error: out of bounds array access at instruction {self.get_instruction()}; halting the machine")
+            sys.exit(f"Error: out of bounds array access at instruction {self.get_pc_line()}; halting the machine")
         offset = SHORT_SIZE + index * SHORT_SIZE
         self.reg[rX] = self.load_short(addr + offset)
         self.step_pc()
@@ -899,7 +922,7 @@ List of commands:
         arrlen = self.load_short(addr)
         index = tc_b16_to_int(self.reg[rZ])
         if index > arrlen - 1:
-            sys.exit(f"Error: out of bounds array access at instruction {self.get_instruction()}; halting the machine")
+            sys.exit(f"Error: out of bounds array access at instruction {self.get_pc_line()}; halting the machine")
         offset = SHORT_SIZE + index * WORD_SIZE
         self.reg[rX] = self.load_word(addr + offset)
         self.step_pc()
@@ -909,7 +932,7 @@ List of commands:
         arrlen = self.load_short(addr)
         index = tc_b16_to_int(self.reg[rZ])
         if index > arrlen - 1:
-            sys.exit(f"Error: out of bounds array access at instruction {self.get_instruction()}; halting the machine")
+            sys.exit(f"Error: out of bounds array access at instruction {self.get_pc_line()}; halting the machine")
         offset = SHORT_SIZE + index
         self.store_byte(addr + offset, self.reg[rX])
         self.step_pc()
@@ -919,7 +942,7 @@ List of commands:
         arrlen = self.load_short(addr)
         index = tc_b16_to_int(self.reg[rZ])
         if index > arrlen - 1:
-            sys.exit(f"Error: out of bounds array access at instruction {self.get_instruction()}; halting the machine")
+            sys.exit(f"Error: out of bounds array access at instruction {self.get_pc_line()}; halting the machine")
         offset = SHORT_SIZE + index * SHORT_SIZE
         self.store_short(addr + offset, self.reg[rX])
         self.step_pc()
@@ -929,7 +952,7 @@ List of commands:
         arrlen = self.load_short(addr)
         index = tc_b16_to_int(self.reg[rZ])
         if index > arrlen - 1:
-            sys.exit(f"Error: out of bounds array access at instruction {self.get_instruction()}; halting the machine")
+            sys.exit(f"Error: out of bounds array access at instruction {self.get_pc_line()}; halting the machine")
         offset = SHORT_SIZE + index * WORD_SIZE
         self.store_word(addr + offset, self.reg[rX])
         self.step_pc()
@@ -939,20 +962,36 @@ List of commands:
         self.reg[rX] = self.load_short(addr)
         self.step_pc()
 
+    def op_i2f(self, rX: int, rY: int):
+        i = tc_b32_to_int(self.reg[rY])
+        self.reg[rX] = fp_float_to_f32(i)
+        self.step_pc()
+
+    def op_i2c(self, rX: int, rY: int):
+        i = tc_b32_to_int(self.reg[rY])
+        # TODO: what am i converting based on?
+        self.reg[rX] = i
+        self.step_pc()
+
+    def op_f2i(self, rX: int, rY: int):
+        f = fp_f32_to_float(self.reg[rY])
+        self.reg[rX] = int(f)
+        self.step_pc()
+
     def store_byte(self, addr: int, byte: int):
         if not self.valid_address(addr):
-            sys.exit(f"Error: attempted to store outside of address range at instruction {self.get_instruction()}; halting the machine")
+            sys.exit(f"Error: attempted to store outside of address range at instruction {self.get_pc_line()}; halting the machine")
         self.mem[addr] = byte & 0xff
 
-    def store_short(self, addr: int, word: int):
+    def store_short(self, addr: int, short: int):
         if not self.valid_address(addr):
-            sys.exit(f"Error: attempted to store outside of address range at instruction {self.get_instruction()}; halting the machine")
-        self.mem[addr]     = (word >> 8) & 0xff
-        self.mem[addr + 1] =  word       & 0xff
+            sys.exit(f"Error: attempted to store outside of address range at instruction {self.get_pc_line()}; halting the machine")
+        self.mem[addr]     = (short >> 8) & 0xff
+        self.mem[addr + 1] =  short       & 0xff
 
     def store_word(self, addr: int, word: int):
         if not self.valid_address(addr):
-            sys.exit(f"Error: attempted to store outside of address range at instruction {self.get_instruction()}; halting the machine")
+            sys.exit(f"Error: attempted to store outside of address range at instruction {self.get_pc_line()}; halting the machine")
         self.mem[addr]     = (word >> 24) & 0xff
         self.mem[addr + 1] = (word >> 16) & 0xff
         self.mem[addr + 2] = (word >>  8) & 0xff
@@ -960,12 +999,12 @@ List of commands:
 
     def load_byte(self, addr: int) -> int:
         if not self.valid_address(addr):
-            sys.exit(f"Error: attempted to load outside of address range at instruction {self.get_instruction()}; halting the machine")
+            sys.exit(f"Error: attempted to load outside of address range at instruction {self.get_pc_line()}; halting the machine")
         return self.mem[addr]
 
     def load_short(self, addr: int) -> int:
         if not self.valid_address(addr):
-            sys.exit(f"Error: attempted to load outside of address range at instruction {self.get_instruction()}; halting the machine")
+            sys.exit(f"Error: attempted to load outside of address range at instruction {self.get_pc_line()}; halting the machine")
         return (
             self.mem[addr] << 8
           | self.mem[addr + 1]
@@ -973,7 +1012,7 @@ List of commands:
 
     def load_word(self, addr: int) -> int:
         if not self.valid_address(addr):
-            sys.exit(f"Error: attempted to load outside of address range at instruction {self.get_instruction()}; halting the machine")
+            sys.exit(f"Error: attempted to load outside of address range at instruction {self.get_pc_line()}; halting the machine")
         return (
             self.mem[addr]     << 24
           | self.mem[addr + 1] << 16
@@ -984,7 +1023,7 @@ List of commands:
     def valid_address(self, addr: int):
         return 0 <= addr and addr <= STACK_START
 
-    def get_instruction(self):
+    def get_pc_line(self):
         return self.pc // WORD_SIZE
 
 class Parser:
@@ -1371,35 +1410,52 @@ def fp_float_to_f16(val: float) -> int:
     int_bin = int(val)
     frac_part = val - int_bin
 
-    # determine bit lengths for exponent + normalization
-    len_int_bin = int_bin.bit_length()
-    len_frac_part = 11 - len_int_bin
+    # calculate bit lengths
+    int_bitlen = int_bin.bit_length()
+    frac_bitlen = 10 - int_bitlen
 
     # convert fractional part to binary representation
     # TODO: how to round?
     frac_bin = 0
-    for i in range(len_frac_part - 1, -1, -1):
+    for i in range(frac_bitlen, -1, -1):
         frac_part *= 2
         if frac_part >= 1:
             frac_part -= 1
             frac_bin |= 1 << i
 
-    # calculate exponent + adjust bias
-    exp = len_int_bin - 1 + 15
+    # # calculate exponent + adjust bias
+    if int_bitlen == 0:
+        exp = 0
+    else:
+        exp = int_bitlen - 1 + 15
 
     # normalize + truncate significand
-    significand = ((int_bin << len_frac_part) | frac_bin) & 0xffff
-
-    return (sign << 15) | (exp << 10) | significand
+    significand = ((int_bin << frac_bitlen) | frac_bin) & 0x3ff
+    # if exp == 0:
+    #     significand = ((int_part << len_frac_part) | frac_bin) & 0x3ff
+    # else:
+    #     significand = ((int_part << (len_frac_part + 1)) | frac_bin) & 0x3ff
+    #
+    #
+    f = (sign << 15) | (exp << 10) | significand
+    print(f"sign: {format(sign, '01b')}")
+    print(f"exp: {format(exp, '05b')}")
+    print(f"significand: {format(significand, '010b')}")
+    print(f"f16: {format(f, '016b')}")
+    return f
 
 def fp_float_to_f32(val: float) -> int:
     # TODO: test speed between struct and manual conversion
     bstr = "".join(format(byte, "08b") for byte in struct.pack("!f", val))
     return int(bstr, 2)
 
+# TODO: actually do the conversion, not this function indirection stuff
+def fp_f16_to_float(val: int):
+    return fp_f32_to_float(fp_f16_to_f32(val))
+
 def fp_f16_to_f32(val: int) -> int:
     sign = val >> 15
-    exp = ((val & 0x1f << 10) >> 10) - 15 + 127
+    exp = ((val & (0x1f << 10)) >> 10) - 15 + 127
     significand = (val & 0x3ff) << (23 - 10)
     f32 = sign << 31 | exp << 23 | significand
     return f32

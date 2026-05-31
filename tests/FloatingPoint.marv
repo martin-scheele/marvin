@@ -1,0 +1,7 @@
+.text
+    setf    r0 3.14
+    writef  r0
+    setf    r1 2
+    divf    r0 r0 r1
+    writef  r0
+    halt

@@ -1,6 +1,7 @@
 .text
 setup:
-    aneww gp 4          # init array to len 4
+    seti r4 4
+    aneww gp r4         # init array to len 4
     copy r0 gp          # r1 = addr
     inci gp 18          # increment gp
     alen r1 r0
