@@ -1542,5 +1542,5 @@ def print_opcode_cost():
 if __name__ == "__main__":
     try:
         main()
-    except KeyboardInterrupt, EOFError:
+    except (KeyboardInterrupt, EOFError):
         sys.exit()
