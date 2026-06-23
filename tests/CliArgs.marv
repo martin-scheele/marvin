@@ -8,7 +8,7 @@ loop:
     alds    r3 r0 r2            # r3 := argv[i] (addr of first arg)
     writes  r3                  # write argv[i]
     inci    r2 1                # i++
-    jump    loop               # next outer iteration
+    jump    loop                # next outer iteration
 end_loop:
     halt
 

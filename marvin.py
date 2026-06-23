@@ -216,26 +216,25 @@ class CPU:
                 heap_offset += (SHORT_SIZE + arglen * SHORT_SIZE)
 
         if cli_args:
-            # Store argc
+            # Start argv array - store length, incremeent offset
             argc = len(cli_args)
-            self.store_short(DATA_START + heap_offset, argc)
-            heap_offset += SHORT_SIZE
-
-            # Start argv array
             self.store_short(DATA_START + heap_offset, argc)
             argv_addr = DATA_START + heap_offset
             heap_offset += SHORT_SIZE
 
             # Store argv addrs + cli args arrays
-            cli_args_arrays_start = DATA_START + heap_offset + SHORT_SIZE * argc
-            cli_arg_addr = cli_args_arrays_start
-            heap_offset += SHORT_SIZE * argc
+            cli_args_arrays_start = DATA_START + heap_offset + SHORT_SIZE * argc # reserve argv array space
+            cli_arg_addr = cli_args_arrays_start                                 # addr of first cli_arg array
+            heap_offset += SHORT_SIZE * argc                                     # increment offset to match
             for i, arg in enumerate(cli_args):
+                # TODO: replace more escaped characters
                 arg = arg.replace(r"\n", "\n")
-                self.store_short(argv_addr + SHORT_SIZE + SHORT_SIZE * i, cli_arg_addr)
+                self.store_short(argv_addr + SHORT_SIZE + SHORT_SIZE * i, cli_arg_addr) # store addr of cli arg in argv array
+                # initialize array length
                 arglen = len(arg)
                 self.store_short(cli_arg_addr, arglen)
                 heap_offset += SHORT_SIZE
+                # store cli arg in its array
                 for char in list(arg):
                     utf16_bytes = list(char.encode("utf-16-be"))
                     utf16_char = utf16_bytes[0] << 8 | utf16_bytes[1]
@@ -243,8 +242,7 @@ class CPU:
                     heap_offset += SHORT_SIZE
                 cli_arg_addr = DATA_START + heap_offset
         else:
-            self.store_short(DATA_START + heap_offset, 0)
-            heap_offset += SHORT_SIZE
+            # initialize argv to 0 if not cli args
             self.store_short(DATA_START + heap_offset, 0)
             heap_offset += SHORT_SIZE
 
@@ -755,8 +753,7 @@ List of commands:
     # Load/store stack instructions
 
     def op_lda(self, rX: int, val: int):
-        # TODO: figure out how to ensure positive value.
-        self.reg[rX] = val
+        self.reg[rX] = tc_int_to_b32(val)
         self.step_pc()
 
     def op_ldb(self, rX: int, rY: int, offset: int):
@@ -1224,7 +1221,7 @@ class Parser:
                         if args[i] == "argc":
                             addr = DATA_START + self.data_offset
                         elif args[i] == "argv":
-                            addr = DATA_START + self.data_offset + SHORT_SIZE
+                            addr = DATA_START + self.data_offset
                         else:
                             addr = DATA_START + self.data_ids[args[i]][2]
                         byte_list[curr_byte] = addr & 0xff
