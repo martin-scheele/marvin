@@ -5,16 +5,26 @@
     .byte b = 30
 .text
 label:
-    ldwa   r0 i
-    stwa   r0 9000
+    seti   r1 9000
+
+    lda    r0 i
+    ldw    r0 r0 0
+    stw    r0 r1 0
     writei r0
-    ldsa   r0 c
-    stsa   r0 9100
+
+    lda    r0 c
+    lds    r0 r0 0
+    sts    r0 r1 100
     writec r0
-    ldwa   r0 f
-    stwa   r0 9200
+
+    lda    r0 f
+    ldw    r0 r0 0
+    stw    r0 r1 200
     writef r0
-    ldba   r0 b
-    stba   r0 9300
+
+    lda    r0 b
+    ldb    r0 r0 0
+    stb    r0 r1 300
     writei r0
+
     halt

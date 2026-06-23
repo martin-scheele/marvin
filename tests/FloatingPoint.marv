@@ -1,7 +1,13 @@
+.data
+    .float PI = 3.14
+    .float TWO = 2.0
 .text
-    setf    r0 3.14
+    lda     r0 PI       # store addr of PI in r0
+    ldwn    r0 r0 0     # store value of PI in r0
     writef  r0
-    setf    r1 2
+    lda     r1 TWO      # store addr of TWO in r1
+    ldwn    r1 r1 0     # store value of TWO in r1
+    writef  r1
     divf    r0 r0 r1
     writef  r0
     halt
