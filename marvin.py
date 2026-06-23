@@ -39,18 +39,16 @@ opcode_to_bin = {
     "jge":    0b00110100, "jle":    0b00110101, "jeq":    0b00110110, "jne":   0b00110111,
     "jgt":    0b00111000, "jlt":    0b00111001, "jsr":    0b00111010,
     # register instructions
-    "seti":   0b01000000, "inci":   0b01000001, "setf":   0b01000010, "incf":  0b01000011,
-    "copy":   0b01000100, "seta":   0b01000101,
+    "seti":   0b01000000, "inci":   0b01000001,
+    "copy":   0b01000100,
     # stack insructions
     "pushb":  0b01010000, "popb":   0b01010001,
     "pushs":  0b01010010, "pops":   0b01010011,
     "pushw":  0b01010100, "popw":   0b01010101,
-    # load/store stack instructions
-    "ldbn":   0b01100000, "ldsn":   0b01100001, "ldwn":   0b01100010,
-    "stbn":   0b01100011, "stsn":   0b01100100, "stwn":   0b01100101,
-    # load/store heap instructions
-    "ldba":   0b01110000, "ldsa":   0b01110001, "ldwa":   0b01110010,
-    "stba":   0b01110011, "stsa":   0b01110100, "stwa":   0b01110101,
+    # load/store instructions
+    "lda":    0b01100000,
+    "ldb":    0b01100001, "lds":    0b01100010, "ldw":    0b01100011,
+    "stb":    0b01100100, "sts":    0b01100101, "stw":    0b01100110,
     # array instructions
     "anewb":  0b10000000, "anews":  0b10000001, "aneww":  0b10000010,
     "aldb":   0b10000011, "alds":   0b10000100, "aldw":   0b10000101,
@@ -85,19 +83,17 @@ opcode_to_argmask = {
     "jge":    "rrl", "jle":    "rrl", "jeq":    "rrl", "jne":    "rrl",
     "jgt":    "rrl", "jlt":    "rrl", "jsr":    "rl",
     # register instructions
-    "seti":   "rn",  "inci":   "rn",  "setf":   "rf",  "incf":   "rf",
-    "copy":   "rr",  "seta":   "ra",
+    "seti":   "rn",  "inci":   "rn",
+    "copy":   "rr",
     # stack insructions
     "pushb":  "rr",  "popb":   "rr",
     "pushs":  "rr",  "pops":   "rr",
     "pushw":  "rr",  "popw":   "rr",
-    # load/store stack instructions
-    "ldbn":   "rrn", "stbn":   "rrn",
-    "ldsn":   "rrn", "stsn":   "rrn",
-    "ldwn":   "rrn", "stwn":   "rrn",
-    # load/store heap instructions
-    "ldba":   "ra",  "ldsa":   "ra",  "ldwa":   "ra",
-    "stba":   "ra",  "stsa":   "ra",  "stwa":   "ra",
+    # load/store instructions
+    "lda":    "ra",
+    "ldb":    "rrn", "stb":    "rrn",
+    "lds":    "rrn", "sts":    "rrn",
+    "ldw":    "rrn", "stw":    "rrn",
     # array instructions
     "anewb":  "rr",  "anews":  "rr",  "aneww":  "rr",
     "aldb":   "rrr", "alds":   "rrr", "aldw":   "rrr",
@@ -170,7 +166,7 @@ WORD_SIZE  = 4
 SHORT_SIZE = 2
 BYTE_SIZE  = 1
 
-STACK_START = 65535
+STACK_START = 65532
 HEAP_START = 8192
 DATA_START = HEAP_START
 
@@ -267,7 +263,7 @@ class CPU:
 
             opcode = bin_to_opcode[self.ir >> 24]
             op_fn = getattr(self, f"op_{opcode}")
-            args = extract_args(self.ir, opcode_to_argmask[opcode])
+            args = self.extract_args(opcode_to_argmask[opcode])
             op_fn(*args) if args else op_fn()
 
             # TODO: actually delay and visualize
@@ -705,20 +701,8 @@ List of commands:
         self.reg[rX] = tc_add(self.reg[rX], tc_b16_to_b32(val))
         self.step_pc()
 
-    def op_setf(self, rX: int, val: int):
-        self.reg[rX] = fp_f16_to_f32(val)
-        self.step_pc()
-
-    def op_incf(self, rX: int, val: int):
-        self.reg[rX] = fp_float_to_f32(fp_f32_to_float(self.reg[rX]) + fp_f16_to_float(val))
-        self.step_pc()
-
     def op_copy(self, rX: int, rY: int):
         self.reg[rX] = self.reg[rY]
-        self.step_pc()
-
-    def op_seta(self, rX: int, val: int):
-        self.reg[rX] = tc_int_to_b32(val)
         self.step_pc()
 
     # Stack instructions
@@ -737,7 +721,7 @@ List of commands:
             sys.exit(f"Error: stack overflow attempting to execute instruction {self.get_pc_line()}; halting the machine")
         addr = tc_b32_to_int(self.reg[rY])
         short = self.reg[rX]
-        self.store_short(addr - 1, short)
+        self.store_short(addr, short)
         self.reg[rY] = tc_int_to_b32(addr - SHORT_SIZE)
         self.step_pc()
 
@@ -746,7 +730,7 @@ List of commands:
             sys.exit(f"Error: stack overflow attempting to execute instruction {self.get_pc_line()}; halting the machine")
         addr = tc_b32_to_int(self.reg[rY])
         word = self.reg[rX]
-        self.store_word(addr - 3, word)
+        self.store_word(addr, word)
         self.reg[rY] = tc_int_to_b32(addr - WORD_SIZE)
         self.step_pc()
 
@@ -759,113 +743,59 @@ List of commands:
     def op_pops(self, rX: int, rY: int):
         addr = tc_b32_to_int(self.reg[rY]) + SHORT_SIZE
         self.reg[rY] = tc_int_to_b32(addr)
-        self.reg[rX] = self.load_short(addr - SHORT_SIZE + 1)
+        self.reg[rX] = self.load_short(addr)
         self.step_pc()
 
     def op_popw(self, rX: int, rY: int):
         addr = tc_b32_to_int(self.reg[rY]) + WORD_SIZE
         self.reg[rY] = tc_int_to_b32(addr)
-        self.reg[rX] = self.load_word(addr - WORD_SIZE + 1)
+        self.reg[rX] = self.load_word(addr)
         self.step_pc()
 
     # Load/store stack instructions
 
-    def op_ldbn(self, rX: int, rY: int, offset: int):
+    def op_lda(self, rX: int, val: int):
+        # TODO: figure out how to ensure positive value.
+        self.reg[rX] = val
+        self.step_pc()
+
+    def op_ldb(self, rX: int, rY: int, offset: int):
         addr = tc_b32_to_int(self.reg[rY])
         offset = tc_b16_to_int(offset)
         self.reg[rX] = self.load_byte(addr + offset)
         self.step_pc()
 
-    def op_ldsn(self, rX: int, rY: int, offset: int):
+    def op_lds(self, rX: int, rY: int, offset: int):
         addr = tc_b32_to_int(self.reg[rY])
         offset = tc_b16_to_int(offset)
-        self.reg[rX] = self.load_short(addr + offset - SHORT_SIZE + 1)
+        self.reg[rX] = self.load_short(addr + offset)
         self.step_pc()
 
-    def op_ldwn(self, rX: int, rY: int, offset: int):
+    def op_ldw(self, rX: int, rY: int, offset: int):
         addr = tc_b32_to_int(self.reg[rY])
         offset = tc_b16_to_int(offset)
-        self.reg[rX] = self.load_word(addr + offset - WORD_SIZE + 1)
+        self.reg[rX] = self.load_word(addr + offset)
         self.step_pc()
 
-    def op_stbn(self, rX: int, rY: int, offset: int):
+    def op_stb(self, rX: int, rY: int, offset: int):
         addr = tc_b32_to_int(self.reg[rY])
         offset = tc_b16_to_int(offset)
         byte = self.reg[rX]
         self.store_byte(addr + offset, byte)
         self.step_pc()
 
-    def op_stsn(self, rX: int, rY: int, offset: int):
+    def op_sts(self, rX: int, rY: int, offset: int):
         addr = tc_b32_to_int(self.reg[rY])
         offset = tc_b16_to_int(offset)
         short = self.reg[rX]
-        self.store_short(addr + offset - SHORT_SIZE + 1, short)
+        self.store_short(addr + offset, short)
         self.step_pc()
 
-    def op_stwn(self, rX: int, rY: int, offset: int):
+    def op_stw(self, rX: int, rY: int, offset: int):
         addr = tc_b32_to_int(self.reg[rY])
         offset = tc_b16_to_int(offset)
         word = self.reg[rX]
-        self.store_word(addr + offset - WORD_SIZE + 1, word)
-        self.step_pc()
-
-    def op_ldbr(self, rX: int, rY: int):
-        addr = tc_b32_to_int(self.reg[rY])
-        self.reg[rX] = self.load_byte(addr)
-        self.step_pc()
-
-    def op_ldsr(self, rX: int, rY: int):
-        addr = tc_b32_to_int(self.reg[rY])
-        self.reg[rX] = self.load_short(addr - SHORT_SIZE + 1)
-        self.step_pc()
-
-    def op_ldwr(self, rX: int, rY: int):
-        addr = tc_b32_to_int(self.reg[rY])
-        self.reg[rX] = self.load_word(addr - WORD_SIZE + 1)
-        self.step_pc()
-
-    def op_stbr(self, rX: int, rY: int):
-        addr = tc_b32_to_int(self.reg[rY])
-        byte = self.reg[rX]
-        self.store_byte(addr, byte)
-        self.step_pc()
-
-    def op_stsr(self, rX: int, rY: int):
-        addr = tc_b32_to_int(self.reg[rY])
-        short = self.reg[rX]
-        self.store_short(addr - SHORT_SIZE + 1, short)
-        self.step_pc()
-
-    def op_stwr(self, rX: int, rY: int):
-        addr = tc_b32_to_int(self.reg[rY])
-        word = self.reg[rX]
-        self.store_word(addr - WORD_SIZE + 1, word)
-        self.step_pc()
-
-    # Load/store heap instruction
-
-    def op_ldba(self, rX: int, addr: int):
-        self.reg[rX] = self.load_byte(addr)
-        self.step_pc()
-
-    def op_ldsa(self, rX: int, addr: int):
-        self.reg[rX] = self.load_short(addr)
-        self.step_pc()
-
-    def op_ldwa(self, rX: int, addr: int):
-        self.reg[rX] = self.load_word(addr)
-        self.step_pc()
-
-    def op_stba(self, rX: int, addr: int):
-        self.store_byte(addr, self.reg[rX])
-        self.step_pc()
-
-    def op_stsa(self, rX: int, addr: int):
-        self.store_short(addr, self.reg[rX])
-        self.step_pc()
-
-    def op_stwa(self, rX: int, addr: int):
-        self.store_word(addr, self.reg[rX])
+        self.store_word(addr + offset, word)
         self.step_pc()
 
     # array instructions
@@ -1026,6 +956,18 @@ List of commands:
     def get_pc_line(self):
         return self.pc // WORD_SIZE
 
+    def extract_args(self, mask: str) -> list[int]:
+        ir = self.ir
+        ret: list[int] = []
+        for c in reversed(mask):
+            if c == "r":
+                ret.insert(0, ir & 0xf)
+                ir >>= 4
+            elif c == "n" or c == "f" or c == "l" or c == "a":
+                ret.insert(0, ir & 0xffff)
+                ir >>= 16
+        return ret
+
 class Parser:
     def __init__(self, inFile: str):
         self.inFile: str = inFile
@@ -1063,7 +1005,7 @@ class Parser:
 
         # Scan for label validation and section bounds.
         for i, line in enumerate(lines):
-            line = line.strip().lower()
+            line = line.strip()
             lineno = i + 1
 
             # Skip empty lines and comments.
@@ -1185,7 +1127,7 @@ class Parser:
         lineno = text_start + 1
         # Validate text section.
         for line in lines[text_start:text_end]:
-            line = line.strip().lower()
+            line = line.strip()
 
             # Skip empty lines, comments, and self.labels.
             if not line or line.startswith("#"):
@@ -1269,11 +1211,6 @@ class Parser:
                         val = tc_int_to_b16(self.data_ids[args[i]][2])
                     else:
                         val = tc_int_to_b16(int(args[i]))
-                    byte_list[curr_byte] = val & 0xff
-                    byte_list[curr_byte - 1] = val >> 8
-                    curr_byte -= 2
-                elif c == "f":
-                    val = fp_float_to_f16(float(args[i]))
                     byte_list[curr_byte] = val & 0xff
                     byte_list[curr_byte - 1] = val >> 8
                     curr_byte -= 2
@@ -1395,85 +1332,14 @@ def tc_mod(val1: int, val2: int) -> int:
 
 # Floating point helper functions
 
-# TODO: optimize
-def fp_float_to_f16(val: float) -> int:
-    if val == 0:
-        return 0
-    # find sign
-    if val < 0:
-        sign = 1
-        val = -val
-    else:
-        sign = 0
-
-    # separate integer and fractional parts
-    int_bin = int(val)
-    frac_part = val - int_bin
-
-    # calculate bit lengths
-    int_bitlen = int_bin.bit_length()
-    frac_bitlen = 10 - int_bitlen
-
-    # convert fractional part to binary representation
-    # TODO: how to round?
-    frac_bin = 0
-    for i in range(frac_bitlen, -1, -1):
-        frac_part *= 2
-        if frac_part >= 1:
-            frac_part -= 1
-            frac_bin |= 1 << i
-
-    # # calculate exponent + adjust bias
-    if int_bitlen == 0:
-        exp = 0
-    else:
-        exp = int_bitlen - 1 + 15
-
-    # normalize + truncate significand
-    significand = ((int_bin << frac_bitlen) | frac_bin) & 0x3ff
-    # if exp == 0:
-    #     significand = ((int_part << len_frac_part) | frac_bin) & 0x3ff
-    # else:
-    #     significand = ((int_part << (len_frac_part + 1)) | frac_bin) & 0x3ff
-    #
-    #
-    f = (sign << 15) | (exp << 10) | significand
-    print(f"sign: {format(sign, '01b')}")
-    print(f"exp: {format(exp, '05b')}")
-    print(f"significand: {format(significand, '010b')}")
-    print(f"f16: {format(f, '016b')}")
-    return f
-
 def fp_float_to_f32(val: float) -> int:
     # TODO: test speed between struct and manual conversion
     bstr = "".join(format(byte, "08b") for byte in struct.pack("!f", val))
     return int(bstr, 2)
 
-# TODO: actually do the conversion, not this function indirection stuff
-def fp_f16_to_float(val: int):
-    return fp_f32_to_float(fp_f16_to_f32(val))
-
-def fp_f16_to_f32(val: int) -> int:
-    sign = val >> 15
-    exp = ((val & (0x1f << 10)) >> 10) - 15 + 127
-    significand = (val & 0x3ff) << (23 - 10)
-    f32 = sign << 31 | exp << 23 | significand
-    return f32
-
 def fp_f32_to_float(val: int) -> float:
     # TODO: test speed between struct and manual conversion
     return struct.unpack("!f", val.to_bytes(4))[0]
-
-def extract_args(ir: int, mask: str) -> list[int]:
-    ret: list[int] = []
-    for c in reversed(mask):
-        if c == "r":
-            ret.insert(0, ir & 0xf)
-            ir >>= 4
-        elif c == "n" or c == "f" or c == "l" or c == "a":
-            ret.insert(0, ir & 0xffff)
-            ir >>= 16
-    return ret
 
 # Misc. helper functions
 
