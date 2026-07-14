@@ -26,7 +26,7 @@ opcode_to_bin = {
     "readi":  0b00000001, "readf":  0b00000010, "readc":  0b00000011,
     "writei": 0b00000100, "writef": 0b00000101, "writec": 0b00000110, "writes": 0b00000111,
     "seed":   0b00001000, "rand":   0b00001001, "time":   0b00001010, "date":   0b00001011,
-    "nop":    0b00001111,
+    "nop":    0b00001100,
     # arithmetic instructions
     "addi":   0b00010000, "subi":   0b00010001, "muli":   0b00010010, "divi":  0b00010011,
     "modi":   0b00010100, "negi":   0b00010101, "addf":   0b00010110, "subf":  0b00010111,
@@ -35,12 +35,12 @@ opcode_to_bin = {
     "and":    0b00100000, "or":     0b00100001, "xor":    0b00100010, "not":   0b00100011,
     "lshl":   0b00100100, "lshr":   0b00100101, "ashl":   0b00100110, "ashr":  0b00100111,
     # jump instructions
-    "jump":   0b00110000, "jra":    0b00110001, "jeqz":   0b00110010, "jnez":  0b00110011,
+    "j":      0b00110000, "jr":     0b00110001, "jeqz":   0b00110010, "jnez":  0b00110011,
     "jge":    0b00110100, "jle":    0b00110101, "jeq":    0b00110110, "jne":   0b00110111,
     "jgt":    0b00111000, "jlt":    0b00111001, "jsr":    0b00111010,
     # register instructions
     "seti":   0b01000000, "inci":   0b01000001,
-    "copy":   0b01000100,
+    "copy":   0b01000010,
     # stack insructions
     "pushb":  0b01010000, "popb":   0b01010001,
     "pushs":  0b01010010, "pops":   0b01010011,
@@ -79,7 +79,7 @@ opcode_to_argmask = {
     "and":    "rrr", "or":     "rrr", "xor":    "rrr", "not":    "rrr",
     "lshl":   "rr",  "lshr":   "rr",  "ashl":   "rr",  "ashr":   "rr",
     # jump instructions
-    "jump":   "l",   "jra":    "r",   "jeqz":   "rl",  "jnez":   "rl",
+    "j":   "l",   "jr":    "r",   "jeqz":   "rl",  "jnez":   "rl",
     "jge":    "rrl", "jle":    "rrl", "jeq":    "rrl", "jne":    "rrl",
     "jgt":    "rrl", "jlt":    "rrl", "jsr":    "rl",
     # register instructions
@@ -623,10 +623,10 @@ List of commands:
 
     # Jump Instructions
 
-    def op_jump(self, addr: int):
+    def op_j(self, addr: int):
         self.pc = addr
 
-    def op_jra(self, rX: int):
+    def op_jr(self, rX: int):
         self.pc = self.reg[rX]
 
     def op_jeqz(self, rX: int, addr: int):
