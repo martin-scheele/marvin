@@ -10,13 +10,10 @@ import struct
 import sys
 
 description = """
-This program serves as an emulator for a register-based machine called Marvin (named after
-the paranoid android character, Marvin, from The Hitchhiker's Guide to the Galaxy by 
-Douglas Adams). The design of the machine was inspired by that of the Harvey Mudd 
-Miniature Machine (HMMM) developed at Harvey Mudd College. The program accepts a .marv file 
-as input, assembles and simulates the instructions within, and prints any output to stdout. 
-Any input to the .marv program is via stdin. If the optional -v argument is specified, 
-the emulator prints the assembled instructions to stdout before simulating them.
+This program serves as an emulator for a register-based machine called Marvin (named 
+after the paranoid android character, Marvin, from The Hitchhiker's Guide to the 
+Galaxy by Douglas Adams). The program accepts a .marv file as input, assembles and 
+simulates the instructions within, and prints any output to stdout.
 """
 
 # Maps opcodes to their binary 8-bit codes.
@@ -50,14 +47,14 @@ opcode_to_bin = {
     "ldb":    0b01100001, "lds":    0b01100010, "ldw":    0b01100011,
     "stb":    0b01100100, "sts":    0b01100101, "stw":    0b01100110,
     # array instructions
-    "anewb":  0b10000000, "anews":  0b10000001, "aneww":  0b10000010,
-    "aldb":   0b10000011, "alds":   0b10000100, "aldw":   0b10000101,
-    "astb":   0b10000110, "asts":   0b10000111, "astw":   0b10001000,
-    "alen":   0b10001001,
+    "anewb":  0b01110000, "anews":  0b01110001, "aneww":  0b01110010,
+    "aldb":   0b01110011, "alds":   0b01110100, "aldw":   0b01110101,
+    "astb":   0b01110110, "asts":   0b01110111, "astw":   0b01111000,
+    "alen":   0b01111001,
     # conversion instructions
-    "i2f":    0b10010000,
-    "i2c":    0b10010001,
-    "f2i":    0b10010010
+    "i2f":    0b10000000,
+    "i2c":    0b10000001,
+    "f2i":    0b10000010
 }
 
 # Maps 8-bit binary codes to the opcodes they represent.
@@ -76,7 +73,7 @@ opcode_to_argmask = {
     "modi":   "rrr", "negi":   "rr",  "addf":   "rrr", "subf":   "rrr",
     "mulf":   "rrr", "divf":   "rrr", "negf":   "rr",
     # bitwise instructions
-    "and":    "rrr", "or":     "rrr", "xor":    "rrr", "not":    "rrr",
+    "and":    "rrr", "or":     "rrr", "xor":    "rrr", "not":    "rr",
     "lshl":   "rr",  "lshr":   "rr",  "ashl":   "rr",  "ashr":   "rr",
     # jump instructions
     "j":   "l",   "jr":    "r",   "jeqz":   "rl",  "jnez":   "rl",
