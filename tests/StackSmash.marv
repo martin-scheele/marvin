@@ -2,5 +2,5 @@
     seti   r4 1
 loop:
     pushw  r4 sp
-    jump   loop
+    j      loop
     halt

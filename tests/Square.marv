@@ -1,5 +1,7 @@
 # Accepts n (int) from standard input and writes n * n to standard output.
+
 .text
+
     readi    r0           # read n
     jsr      ra square    # result = square(n)
     writei   rv           # write result
@@ -11,4 +13,4 @@
 
 square:
     muli     rv r0 r0     # output = n * n
-    jra      ra           # jump to caller
+    jr       ra           # jump to caller

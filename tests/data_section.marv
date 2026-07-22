@@ -1,9 +1,12 @@
 .data
+
     .int i = 69
     .char c = a
     .float f = 42.0
     .byte b = 30
+
 .text
+
 label:
     seti   r1 9000
 

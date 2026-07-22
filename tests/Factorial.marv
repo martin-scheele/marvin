@@ -1,5 +1,6 @@
 # Accepts n (int) from standard input and writes n! (computed recursively) to standard output.
 .text
+
     readi     r3            # read n
     pushw     r3 sp         # mem[sp++] = n
     jsr       ra factorial  # n! = factorial(n)
@@ -29,7 +30,7 @@ factorial:
 
     # Base case.
     seti      rv 1            # output = 1
-    jump      restore         # jump to restore
+    j         restore         # jump to restore
 
 # Recursive step.
 factorialRec:
@@ -49,4 +50,4 @@ restore:
     # Restore fp and ra, and jump to ra (caller).
     popw      fp sp           # fp = mem[++sp]
     popw      ra sp           # ra = mem[++sp]
-    jra       ra              # jump to caller
+    jr        ra              # jump to caller

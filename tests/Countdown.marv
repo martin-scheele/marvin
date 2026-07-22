@@ -1,12 +1,13 @@
 # Accepts n (int) from standard input and writes a countdown from n to 0 to standard output.
 
 .text
+
     readi    r0          # read n
     seti     r1 0        # zero = 0
 loop:
     jlt      r0 r1 done  # if n < zero jump to done
     writei   r0          # write n
     inci     r0 -1       # n = n - 1
-    jump     loop        # jump to continue
+    j        loop        # jump to continue
 done:
     halt                 # halt the machine

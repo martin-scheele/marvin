@@ -1,4 +1,5 @@
 .text
+
 start:
     lda     r0 argv             # r0 := $argv
     alen    r1 r0               # r1 := len(argv)
@@ -8,7 +9,7 @@ loop:
     alds    r3 r0 r2            # r3 := argv[i] (addr of first arg)
     writes  r3                  # write argv[i]
     inci    r2 1                # i++
-    jump    loop                # next outer iteration
+    j       loop                # next outer iteration
 end_loop:
     halt
 
