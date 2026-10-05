@@ -1,0 +1,117 @@
+# Prints the current date as mm/dd/yyyy and the time as hh:mm:ss am/pm.
+# date packs the date as (year<<13)|(month<<9)|day; time returns milliseconds
+# since midnight. writei appends a newline, so the fixed-width output is
+# assembled digit by digit with writec (put2/put4 print 2/4 chars, no newline).
+# Exercises: date/time, and/shifts for unpacking, writec, jsr.
+
+.text
+main:
+    # ---- date: r9 = day, r10 = month, r5 = year ----
+    date r1
+    seti r2 511
+    and  r9 r1 r2        # day: low 9 bits
+    seti r2 9
+    lshr r3 r1 r2
+    seti r2 15
+    and  r10 r3 r2       # month: bits [12:9]
+    seti r2 13
+    lshr r5 r1 r2        # year: bits [31:13]
+    copy r1 r10
+    jsr ra put2          # mm
+    seti r1 47           # '/'
+    writec r1
+    copy r1 r9
+    jsr ra put2          # dd
+    seti r1 47           # '/'
+    writec r1
+    copy r1 r5
+    jsr ra put4          # yyyy
+    seti r1 10           # newline
+    writec r1
+
+    # ---- time: r3 = hours, r5 = minutes, r6 = seconds ----
+    time r1
+    seti r2 1000
+    divi r1 r1 r2        # drop milliseconds: total seconds since midnight
+    seti r2 3600
+    divi r3 r1 r2        # hours = total / 3600
+    muli r4 r3 r2
+    subi r4 r1 r4        # seconds within the hour
+    seti r2 60
+    divi r5 r4 r2        # minutes
+    muli r6 r5 r2
+    subi r6 r4 r6        # seconds
+    # am/pm marker: r8 = 'a' (97), flipped to 'p' (112) if hours >= 12
+    seti r8 97
+    seti r2 12
+    jlt  r3 r2 haveampm
+    seti r8 112
+haveampm:
+    # 12-hour clock: h12 = hours % 12, with 0 rendered as 12
+    seti r2 12
+    divi r7 r3 r2
+    muli r7 r7 r2
+    subi r7 r3 r7        # h12 = hours mod 12
+    jeqz r7 set12
+    j ampmdone
+set12:
+    seti r7 12
+ampmdone:
+    copy r1 r7
+    jsr ra put2          # hh
+    seti r1 58           # ':'
+    writec r1
+    copy r1 r5
+    jsr ra put2          # mm
+    seti r1 58           # ':'
+    writec r1
+    copy r1 r6
+    jsr ra put2          # ss
+    seti r1 32           # ' '
+    writec r1
+    copy r1 r8
+    writec r1            # 'a' or 'p'
+    seti r1 109          # 'm'
+    writec r1
+    seti r1 10           # newline
+    writec r1
+
+    halt
+
+# put2: print r1 (0..99) as two zero-padded chars; clobbers r1-r4
+put2:
+    seti r2 10
+    divi r3 r1 r2        # tens
+    muli r4 r3 r2
+    subi r4 r1 r4        # ones
+    seti r2 48           # '0'
+    addi r3 r3 r2
+    writec r3
+    addi r4 r4 r2
+    writec r4
+    jr ra
+
+# put4: print r1 (0..9999) as four zero-padded chars; clobbers r1-r8
+put4:
+    seti r2 1000
+    divi r3 r1 r2        # thousands
+    muli r4 r3 r2
+    subi r4 r1 r4        # remainder
+    seti r2 100
+    divi r5 r4 r2        # hundreds
+    muli r6 r5 r2
+    subi r6 r4 r6        # last two digits
+    seti r2 10
+    divi r7 r6 r2        # tens
+    muli r8 r7 r2
+    subi r8 r6 r8        # ones
+    seti r2 48           # '0'
+    addi r3 r3 r2
+    writec r3
+    addi r5 r5 r2
+    writec r5
+    addi r7 r7 r2
+    writec r7
+    addi r8 r8 r2
+    writec r8
+    jr ra

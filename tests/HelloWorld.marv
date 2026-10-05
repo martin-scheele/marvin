@@ -1,0 +1,11 @@
+# Declares a string in .data and prints it with writes.
+# Exercises: .data strings, lda, writes.
+
+.data
+.string msg = "Hello, World!\n"
+
+.text
+main:
+    lda r1 msg       # r1 = address of msg
+    writes r1
+    halt

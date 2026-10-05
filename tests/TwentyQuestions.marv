@@ -1,0 +1,53 @@
+# The computer picks a secret number from 1 to 100 (seeded from the
+# clock so every run differs) and you get 20 guesses. Each guess is read
+# with readi; the program answers "Too low!" or "Too high!" until you
+# find it. Closing stdin with Ctrl+D (or the EOF button) quits early.
+# Exercises: seed/rand, readi, interactive stdin.
+
+.data
+.string prompt = "Your guess? "
+.string lowmsg = "Too low!\n"
+.string highmsg = "Too high!\n"
+.string winmsg = "You got it!\n"
+.string losemsg = "Out of guesses!\n"
+.string byemsg = "Goodbye!\n"
+
+.text
+main:
+    time r1
+    seed r1              # seed the generator from the clock
+
+    seti r1 1
+    seti r2 100
+    rand r3 r1 r2        # r3 = secret in [1, 100]
+
+    seti r4 20           # guesses remaining
+loop:
+    jeqz r4 outofguesses
+    lda r1 prompt
+    writes r1
+    readi r5             # your guess (bad input re-prompts inside readi)
+    jnez rv goodbye      # Ctrl+D / EOF button -> rv = 1, r5 unchanged
+    jeq r5 r3 gotit
+    jlt r5 r3 low
+    lda r1 highmsg
+    writes r1
+    j next
+low:
+    lda r1 lowmsg
+    writes r1
+next:
+    inci r4 -1
+    j loop
+gotit:
+    lda r1 winmsg
+    writes r1
+    halt
+outofguesses:
+    lda r1 losemsg
+    writes r1
+    halt
+goodbye:
+    lda r1 byemsg
+    writes r1
+    halt

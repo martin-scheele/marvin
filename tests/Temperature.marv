@@ -1,0 +1,29 @@
+# Reads a Celsius temperature and prints the Fahrenheit equivalent
+# (F = C*9/5 + 32). If the result is below freezing, also prints how many
+# degrees below 32 F it is, made positive with negf.
+# Exercises: readf, subf/negf, float comparisons.
+
+.text
+main:
+    readf r1           # Celsius
+    jnez rv done
+    seti r2 9
+    i2f r2 r2
+    mulf r2 r1 r2      # C * 9
+    seti r3 5
+    i2f r3 r3
+    divf r2 r2 r3      # C * 9 / 5
+    seti r4 32
+    i2f r4 r4
+    addf r2 r2 r4      # F = C*9/5 + 32
+    writef r2
+
+    subf r5 r2 r4      # F - 32 (negative when below freezing)
+    seti r6 0
+    i2f r6 r6          # 0.0
+    jge r5 r6 main     # at or above freezing: next input
+    negf r5 r5         # degrees below freezing, as a positive number
+    writef r5
+    j main
+done:
+    halt

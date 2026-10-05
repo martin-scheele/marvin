@@ -1,0 +1,63 @@
+# Reads scores from standard input until EOF and prints a letter grade
+# for each: A >= 90, B >= 80, C >= 70, D >= 60, F below. Scores outside
+# 1..100 print '?'. At the end prints the number of failing scores, or
+# "none failed".
+# Exercises: jge/jgt/jle/jne, writec.
+
+.data
+.string nonemsg = "none failed\n"
+
+.text
+main:
+    seti r7 0          # failing count
+loop:
+    readi r1
+    jnez rv done
+    seti r2 0
+    jle r1 r2 bad      # score <= 0 -> invalid
+    seti r2 100
+    jgt r1 r2 bad      # score > 100 -> invalid
+    seti r2 90
+    jge r1 r2 gradeA
+    seti r2 80
+    jge r1 r2 gradeB
+    seti r2 70
+    jge r1 r2 gradeC
+    seti r2 60
+    jge r1 r2 gradeD
+    seti r3 70         # 'F'
+    writec r3
+    inci r7 1
+    j nl
+gradeA:
+    seti r3 65         # 'A'
+    writec r3
+    j nl
+gradeB:
+    seti r3 66         # 'B'
+    writec r3
+    j nl
+gradeC:
+    seti r3 67         # 'C'
+    writec r3
+    j nl
+gradeD:
+    seti r3 68         # 'D'
+    writec r3
+    j nl
+bad:
+    seti r3 63         # '?'
+    writec r3
+nl:
+    seti r3 10         # newline
+    writec r3
+    j loop
+done:
+    seti r1 0
+    jne r7 r1 somefail # any failing scores?
+    lda r1 nonemsg
+    writes r1
+    halt
+somefail:
+    writei r7
+    halt

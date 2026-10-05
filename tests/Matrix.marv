@@ -1,0 +1,51 @@
+# Multi-dimensional arrays: a rows x cols matrix is just a 1-D word
+# array of length rows*cols in row-major order. Element [i][j] sits at
+# flat index i*cols + j, so the bounds-checked astw/aldw guard the whole
+# matrix, and 2-D indexing costs two instructions (muli + add).
+# Exercises: aneww, astw/aldw, gp bump allocation.
+
+.text
+main:
+    seti r10 4          # cols
+    seti r11 3          # rows
+
+    # ---- allocate a 3x4 word matrix on the heap (bump-allocate via gp) ----
+    copy r1 gp          # r1 = base address of the matrix
+    muli r2 r10 r11     # r2 = rows*cols = 12 elements
+    aneww r1 r2         # write length header (12), zero the 12 words
+    seti r2 50          # bytes used: 2 (header) + 12*4 (words)
+    addi gp gp r2       # gp now points past the matrix
+
+    # ---- fill: matrix[i][j] = flat index + 1, i.e. values 1..12 ----
+    seti r3 0           # i = 0
+fill_i:
+    seti r4 0           # j = 0
+fill_j:
+    muli r5 r3 r10      # r5 = i*cols
+    addi r5 r5 r4       # r5 = flat index of [i][j]
+    copy r6 r5
+    inci r6 1           # value = flat + 1
+    astw r6 r1 r5       # matrix[i][j] = value
+    inci r4 1
+    jlt  r4 r10 fill_j
+    inci r3 1
+    jlt  r3 r11 fill_i
+
+    # ---- print each row, then its sum ----
+    seti r3 0           # i = 0
+print_i:
+    seti r4 0           # j = 0
+    seti r8 0           # row sum = 0
+print_j:
+    muli r5 r3 r10
+    addi r5 r5 r4       # flat index of [i][j]
+    aldw r9 r1 r5       # r9 = matrix[i][j]
+    writei r9
+    addi r8 r8 r9       # accumulate row sum
+    inci r4 1
+    jlt  r4 r10 print_j
+    writei r8           # print row sum
+    inci r3 1
+    jlt  r3 r11 print_i
+
+    halt

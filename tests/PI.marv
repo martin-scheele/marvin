@@ -1,0 +1,40 @@
+# Approximates PI with the Nilakantha series:
+#   PI = 3 + 4/(2*3*4) - 4/(4*5*6) + 4/(6*7*8) - ...
+# Reads the number of terms from stdin (try 100) and prints the
+# approximation with writef, followed by its integer part (f2i).
+# Exercises: i2f, mulf, divf, addf, negf, writef, f2i.
+
+.text
+main:
+    readi r1           # n = number of terms
+    seti r5 3
+    i2f r2 r5          # pi = 3.0
+    seti r5 1
+    i2f r3 r5          # sign = 1.0
+    seti r5 4
+    i2f r4 r5          # four = 4.0
+    seti r5 2          # a = 2 (first denominator triple: 2,3,4)
+loop:
+    jeqz r1 done       # while n != 0
+    copy r6 r5
+    i2f r6 r6          # a as float
+    copy r7 r5
+    inci r7 1
+    i2f r7 r7          # a+1 as float
+    mulf r6 r6 r7
+    copy r7 r5
+    inci r7 2
+    i2f r7 r7          # a+2 as float
+    mulf r6 r6 r7      # r6 = a*(a+1)*(a+2)
+    divf r6 r4 r6      # r6 = 4 / (a*(a+1)*(a+2))
+    mulf r6 r6 r3      # apply the sign
+    addf r2 r2 r6      # pi += term
+    negf r3 r3         # flip the sign
+    inci r5 2          # next triple
+    inci r1 -1
+    j loop
+done:
+    writef r2          # the approximation
+    f2i r6 r2
+    writei r6          # its integer part
+    halt

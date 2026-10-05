@@ -1,33 +1,34 @@
-# Accepts n (int) and k (int) from standard input and writes C(n, k) = n!/(k!(n-k)!) to standard output.
+# Accepts n (int) and k (int) from standard input and writes
+# C(n, k) = n!/(k!(n-k)!) to standard output.
+# Exercises: jsr/jr, divi, subi.
 
 .text
 
-      readi    r3            # read n
-      readi    r4            # read k
-      copy     r5 r3         # r5 = n
-      jsr      ra factorial  # n! = factorial(n)
-      copy     r7 rv         # r7 = n!
-      copy     r5 r4         # r5 = k
-      jsr      ra factorial  # k! = factorial(k)
-      divi     r7 r7 rv      # r7 = n!/k!
-      subi     r5 r3 r4      # r5 = n - k
-      jsr      ra factorial  # (n-k)! = factorial(n-k)
-      divi     r7 r7 rv      # r7 = n!/(k!(n-k)!)
-      writei   r7            # write n!/(k!(n-k)!)
-      halt                   # halt the machine
+    readi  r3           # read n
+    readi  r4           # read k
+    copy   r5 r3
+    jsr    ra factorial # rv = n!
+    copy   r7 rv        # r7 = n!
+    copy   r5 r4
+    jsr    ra factorial # rv = k!
+    divi   r7 r7 rv     # r7 = n! / k!
+    subi   r5 r3 r4     # r5 = n - k
+    jsr    ra factorial # rv = (n-k)!
+    divi   r7 r7 rv     # r7 = n! / (k! (n-k)!)
+    writei r7
+    halt
 
-# int factorial(int n):
-#   input:  r5 = n
+# factorial: rv <- n! (iterative)
+#   input : r5 = n
 #   output: rv = n!
-#   temps:  r6
-
+#   temps : r6
 factorial:
-      seti     rv 1          # output = 1
-      copy     r6 r5         # i = n
+    seti rv 1           # rv = 1
+    copy r6 r5          # i = n
 loop:
-      jeqz     r6 return     # if i = 0 jump to 19
-      muli     rv rv r6      # output = output * i
-      inci     r6 -1         # i = i - 1
-      j        loop          # jump to loop
+    jeqz r6 return      # i = 0 -> done
+    muli rv rv r6       # rv *= i
+    inci r6 -1          # i--
+    j    loop
 return:
-      jr       ra            # jump to caller
+    jr   ra

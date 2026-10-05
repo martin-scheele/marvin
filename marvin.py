@@ -74,7 +74,7 @@ opcode_to_argmask = {
     "mulf":   "rrr", "divf":   "rrr", "negf":   "rr",
     # bitwise instructions
     "and":    "rrr", "or":     "rrr", "xor":    "rrr", "not":    "rr",
-    "lshl":   "rr",  "lshr":   "rr",  "ashl":   "rr",  "ashr":   "rr",
+    "lshl":   "rrr", "lshr":   "rrr", "ashl":   "rrr", "ashr":   "rrr",
     # jump instructions
     "j":   "l",   "jr":    "r",   "jeqz":   "rl",  "jnez":   "rl",
     "jge":    "rrl", "jle":    "rrl", "jeq":    "rrl", "jne":    "rrl",
@@ -181,6 +181,7 @@ class CPU:
 
         self.breakpoints: set[int] = set()
         self.debug_continue_flag: bool = False
+        self.eof: bool = False        # stdin closed: reads report rv = 1 instead of blocking
 
         # Load the machine code into memory starting at location 0.
         for i, v in enumerate(self.program.machine_code):
@@ -452,31 +453,57 @@ List of commands:
 
     def op_readi(self, rX: int):
         while True:
+            line = self.read_stdin_line()
+            if line is None:
+                # stdin closed: leave rX unchanged, report EOF in rv
+                self.reg[reg_to_bin["rv"]] = 1
+                self.step_pc()
+                return
             try:
-                x = int(input())
+                x = int(line)
                 if (valid_int(x)):
                     break
                 raise ValueError
             except ValueError:
                 print("Illegal input: input must be a number must be in [-32768, 32767]")
         self.reg[rX] = tc_int_to_b32(x)
+        self.reg[reg_to_bin["rv"]] = 0
         self.step_pc()
 
 
     def op_readf(self, rX: int):
         while True:
+            line = self.read_stdin_line()
+            if line is None:
+                # stdin closed: leave rX unchanged, report EOF in rv
+                self.reg[reg_to_bin["rv"]] = 1
+                self.step_pc()
+                return
             try:
-                x = float(input())
+                x = float(line)
                 break
             except ValueError:
                 # TODO: better error message
                 print("Illegal input: input must be a number")
         self.reg[rX] = fp_float_to_f32(x)
+        self.reg[reg_to_bin["rv"]] = 0
         self.step_pc()
 
     def op_readc(self, rX: int):
-        byte_list = list(str(getch()).encode("utf-16-be"))
+        if self.eof:
+            # stdin closed: leave rX unchanged, report EOF in rv
+            self.reg[reg_to_bin["rv"]] = 1
+            self.step_pc()
+            return
+        ch = getch()
+        if ch == "" or ch == "\x04":  # EOF, or Ctrl+D in raw mode
+            self.eof = True
+            self.reg[reg_to_bin["rv"]] = 1
+            self.step_pc()
+            return
+        byte_list = list(str(ch).encode("utf-16-be"))
         self.reg[rX] = byte_list[0] << 8 | byte_list[1]
+        self.reg[reg_to_bin["rv"]] = 0
         self.step_pc()
 
     def op_writei(self, rX: int):
@@ -950,6 +977,16 @@ List of commands:
     def get_pc_line(self):
         return self.pc // WORD_SIZE
 
+    def read_stdin_line(self):
+        """Read a line from stdin; returns None at EOF (sticky)."""
+        if self.eof:
+            return None
+        try:
+            return input()
+        except EOFError:
+            self.eof = True
+            return None
+
     def extract_args(self, mask: str) -> list[int]:
         ir = self.ir
         ret: list[int] = []
@@ -1111,7 +1148,7 @@ class Parser:
                     utf16_char = utf16_bytes[0] << 8 | utf16_bytes[1]
                     utf16_chars.append(utf16_char)
                 self.data_ids[toks[1]] = (toks[0], utf16_chars, self.data_offset)
-                self.data_offset += len(toks[3]) * SHORT_SIZE
+                self.data_offset += (SHORT_SIZE + len(utf16_chars) * SHORT_SIZE)
 
         pc_line = 0
         abs_line = 0
@@ -1123,18 +1160,20 @@ class Parser:
         for line in lines[text_start:text_end]:
             line = line.strip()
 
-            # Skip empty lines, comments, and self.labels.
+            # Skip empty lines and comments.
             if not line or line.startswith("#"):
-                continue
-
-            if line.endswith(":"):
-                self.lines.append(line)
-                abs_line += 1
                 continue
 
             # Remove inlined comment if any.
             if "#" in line:
                 line = line[:line.find("#")].strip()
+                if not line:
+                    continue
+
+            if line.endswith(":"):
+                self.lines.append(line)
+                abs_line += 1
+                continue
 
             toks = line.split()
 
@@ -1351,6 +1390,10 @@ def find_getch():
     import tty
     def _getch():
         fd = sys.stdin.fileno()
+        if not sys.stdin.isatty():
+            # Piped/redirected stdin (e.g. echo ... | marvin.py prog.marv):
+            # no termios available; read one char at a time. Returns "" at EOF.
+            return sys.stdin.read(1)
         old_settings = termios.tcgetattr(fd)
         try:
             _ = tty.setraw(fd)

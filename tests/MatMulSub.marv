@@ -1,0 +1,122 @@
+# Same multiplication as MatMul.marv (C = A x B, 2x3 * 3x2 -> 2x2),
+# but the flat-index math is factored into jsr helper subroutines:
+#   ld2d: rv <- element [r2][r3] of the array at r1 with r4 columns
+#   st2d: store r5 at [r2][r3] of the array at r1 with r4 columns
+# Register convention: r7/r8/r9 = bases of A/B/C, r0 = i, r10 = j,
+# r5 = k, r6 = acc; r1-r4 = helper args, r11 (ra) = return address.
+# Exercises: jsr helpers, pushw/popw across calls.
+
+.text
+main:
+    # ---- allocate A (6 words), B (6 words), C (4 words) on the heap ----
+    copy r7 gp          # r7 = base of A
+    seti r1 6
+    aneww r7 r1
+    seti r1 26          # 2 (header) + 6*4
+    addi gp gp r1
+
+    copy r8 gp          # r8 = base of B
+    seti r1 6
+    aneww r8 r1
+    seti r1 26
+    addi gp gp r1
+
+    copy r9 gp          # r9 = base of C
+    seti r1 4
+    aneww r9 r1
+    seti r1 18          # 2 (header) + 4*4
+    addi gp gp r1
+
+    # ---- fill A with 1..6, B with 7..12 (row-major) ----
+    seti r1 0
+fillA:
+    copy r2 r1
+    inci r2 1
+    astw r2 r7 r1
+    inci r1 1
+    seti r2 6
+    jlt  r1 r2 fillA
+
+    seti r1 0
+fillB:
+    copy r2 r1
+    inci r2 7
+    astw r2 r8 r1
+    inci r1 1
+    seti r2 6
+    jlt  r1 r2 fillB
+
+    # ---- multiply: C[i][j] = sum over k of A[i][k] * B[k][j] ----
+    seti r0 0           # i = 0
+mul_i:
+    seti r10 0          # j = 0
+mul_j:
+    seti r6 0           # acc = 0
+    seti r5 0           # k = 0
+mul_k:
+    copy r1 r7          # rv = A[i][k] via ld2d(A, i, k, 3)
+    copy r2 r0
+    copy r3 r5
+    seti r4 3
+    jsr ra ld2d
+    pushw rv sp         # save A[i][k] on the stack across the next call
+    copy r1 r8          # rv = B[k][j] via ld2d(B, k, j, 2)
+    copy r2 r5
+    copy r3 r10
+    seti r4 2
+    jsr ra ld2d
+    popw r1 sp          # r1 = A[i][k]
+    muli r1 r1 rv
+    addi r6 r6 r1       # acc += A[i][k] * B[k][j]
+    inci r5 1
+    seti r1 3
+    jlt  r5 r1 mul_k
+    copy r1 r9          # st2d(C, i, j, 2, acc)
+    copy r2 r0
+    copy r3 r10
+    seti r4 2
+    copy r5 r6
+    jsr ra st2d
+    inci r10 1
+    seti r1 2
+    jlt  r10 r1 mul_j
+    inci r0 1
+    seti r1 2
+    jlt  r0 r1 mul_i
+
+    # ---- print C via ld2d, one element per line ----
+    seti r0 0
+pr_i:
+    seti r10 0
+pr_j:
+    copy r1 r9
+    copy r2 r0
+    copy r3 r10
+    seti r4 2
+    jsr ra ld2d
+    writei rv
+    inci r10 1
+    seti r1 2
+    jlt  r10 r1 pr_j
+    inci r0 1
+    seti r1 2
+    jlt  r0 r1 pr_i
+
+    halt
+
+# ---- helpers ----
+# ld2d: rv <- element [r2][r3] of the array at r1 with r4 columns
+ld2d:
+    muli rv r2 r4       # rv = row * ncols
+    addi rv rv r3       # rv = flat index
+    aldw rv r1 rv       # rv = element (bounds-checked)
+    jr ra
+
+# st2d: store r5 at [r2][r3] of the array at r1 with r4 columns
+st2d:
+    pushw r6 sp         # preserve caller's r6
+    muli r6 r2 r4
+    addi r6 r6 r3
+    astw r5 r1 r6       # bounds-checked store
+    popw r6 sp
+    jr ra

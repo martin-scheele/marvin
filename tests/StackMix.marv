@@ -1,0 +1,26 @@
+# Push and pop mixed sizes on the stack. The stack grows down: each
+# push stores the value at sp and decrements sp by the item size (4, 2,
+# or 1 bytes); each pop increments sp first, then reads. Popping in
+# reverse order and size reconstructs the values.
+# Exercises: pushb/pushs/popb/pops alongside pushw/popw.
+
+.text
+main:
+    copy r3 sp         # remember the starting stack pointer
+
+    seti r1 32000      # fits in seti's 16-bit immediate
+    pushw r1 sp
+    seti r1 4660       # 0x1234
+    pushs r1 sp
+    seti r1 171        # 0xAB
+    pushb r1 sp
+
+    popb r2 sp         # r2 = 171
+    writei r2
+    pops r2 sp         # r2 = 4660
+    writei r2
+    popw r2 sp         # r2 = 32000
+    writei r2
+
+    copy sp r3         # restore sp
+    halt

@@ -1,0 +1,50 @@
+# Reads characters until EOF and prints them back with letter case
+# flipped (A <-> a, via xor 32). Characters are buffered in a byte
+# array; nothing is printed until input ends.
+# Exercises: readc/writec, byte arrays (anewb/astb/aldb), xor, i2c.
+
+.data
+.string hint = "type some text, then press Ctrl+D (or the EOF button)\n"
+
+.text
+main:
+    copy r1 gp         # r1 = buffer (64 bytes)
+    seti r2 64
+    anewb r1 r2
+    seti r2 66         # 2 (header) + 64
+    addi gp gp r2
+
+    lda r3 hint
+    writes r3
+
+    seti r4 0          # count = 0
+read:
+    readc r5
+    jnez rv emit
+    seti r6 65         # 'A'
+    jlt r5 r6 keep
+    seti r6 90         # 'Z'
+    jle r5 r6 flip
+    seti r6 97         # 'a'
+    jlt r5 r6 keep
+    seti r6 122        # 'z'
+    jgt r5 r6 keep
+flip:
+    seti r6 32
+    xor r5 r5 r6       # toggle the case bit
+keep:
+    astb r5 r1 r4
+    inci r4 1
+    j read
+emit:
+    seti r5 0          # i = 0
+emitl:
+    jeq r5 r4 summary
+    aldb r6 r1 r5
+    i2c r6 r6          # char code (identity conversion)
+    writec r6
+    inci r5 1
+    j emitl
+summary:
+    writei r4          # how many characters were flipped
+    halt

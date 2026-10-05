@@ -1,0 +1,91 @@
+# Matrix multiplication: C = A x B with A: 2x3, B: 3x2, C: 2x2, all
+# flattened to 1-D row-major arrays on the heap. C[i][j] = sum_k A[i][k] *
+# B[k][j]; every access goes through the bounds-checked astw/aldw, with
+# flat = row*cols + col computed inline.
+# Exercises: aneww, astw/aldw, flat row-major indexing.
+
+.text
+main:
+    seti r10 3          # A cols (also B rows, the shared dimension)
+    seti r11 2          # B cols (also C cols)
+    seti r12 2          # A rows (also C rows)
+
+    # ---- allocate A (6 words), B (6 words), C (4 words) on the heap ----
+    copy r1 gp          # r1 = base of A
+    seti r13 6
+    aneww r1 r13
+    seti r13 26         # 2 (header) + 6*4
+    addi gp gp r13
+
+    copy r2 gp          # r2 = base of B
+    seti r13 6
+    aneww r2 r13
+    seti r13 26
+    addi gp gp r13
+
+    copy r3 gp          # r3 = base of C
+    seti r13 4
+    aneww r3 r13
+    seti r13 18         # 2 (header) + 4*4
+    addi gp gp r13
+
+    # ---- fill A with 1..6, B with 7..12 (row-major) ----
+    seti r4 0
+fillA:
+    copy r6 r4
+    inci r6 1           # A values: 1, 2, 3, 4, 5, 6
+    astw r6 r1 r4
+    inci r4 1
+    seti r13 6
+    jlt  r4 r13 fillA
+
+    seti r4 0
+fillB:
+    copy r6 r4
+    inci r6 7           # B values: 7, 8, 9, 10, 11, 12
+    astw r6 r2 r4
+    inci r4 1
+    seti r13 6
+    jlt  r4 r13 fillB
+
+    # ---- multiply: C[i][j] = sum over k of A[i][k] * B[k][j] ----
+    seti r4 0           # i = 0
+mul_i:
+    seti r5 0           # j = 0
+mul_j:
+    seti r8 0           # acc = 0
+    seti r6 0           # k = 0
+mul_k:
+    muli r7 r4 r10      # flat of A[i][k] = i*Acols + k
+    addi r7 r7 r6
+    aldw r9 r1 r7       # r9 = A[i][k]
+    muli r7 r6 r11      # flat of B[k][j] = k*Bcols + j
+    addi r7 r7 r5
+    aldw r13 r2 r7      # r13 = B[k][j]
+    muli r9 r9 r13
+    addi r8 r8 r9       # acc += product
+    inci r6 1
+    jlt  r6 r10 mul_k
+    muli r7 r4 r11      # flat of C[i][j] = i*Ccols + j
+    addi r7 r7 r5
+    astw r8 r3 r7       # C[i][j] = acc
+    inci r5 1
+    jlt  r5 r11 mul_j
+    inci r4 1
+    jlt  r4 r12 mul_i
+
+    # ---- print C, one element per line, row by row ----
+    seti r4 0
+pr_i:
+    seti r5 0
+pr_j:
+    muli r7 r4 r11
+    addi r7 r7 r5
+    aldw r9 r3 r7
+    writei r9
+    inci r5 1
+    jlt  r5 r11 pr_j
+    inci r4 1
+    jlt  r4 r12 pr_i
+
+    halt

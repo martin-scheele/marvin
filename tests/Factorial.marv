@@ -1,53 +1,48 @@
-# Accepts n (int) from standard input and writes n! (computed recursively) to standard output.
+# Accepts n (int) from standard input and writes n! (computed
+# recursively) to standard output.
+# Exercises: jsr/jr, pushw/popw, stack frames with fp.
+
 .text
 
-    readi     r3            # read n
-    pushw     r3 sp         # mem[sp++] = n
-    jsr       ra factorial  # n! = factorial(n)
-    inci      sp -4         # sp = sp - 4
-    writei    rv            # write n!
-    halt                    # halt the machine
+    readi    r3           # read n
+    pushw    r3 sp        # mem[sp--] = n
+    jsr      ra factorial # rv = factorial(n)
+    inci     sp -4        # sp = sp - 4
+    writei   rv           # write n!
+    halt
 
-# int factorial(int n):
+# factorial: rv <- n! (recursive)
 #   input : r3 = n
 #   output: rv = n!
-#   temps: r4, r5
-
-# Save ra and fp, and set fp to sp.
+#   temps : r4, r5
 factorial:
-    pushw     ra sp           # mem[sp--] = ra
-    pushw     fp sp           # mem[sp--] = fp
-    copy      fp sp           # fp = sp
+    pushw ra sp           # mem[sp--] = ra
+    pushw fp sp           # mem[sp--] = fp
+    copy  fp sp           # fp = sp
 
-    # Save registers used.
-    pushw     r3 sp           # mem[sp--] = r3
-    pushw     r4 sp           # mem[sp--] = r4
-    pushw     r5 sp           # mem[sp--] = r5
+    pushw r3 sp           # save registers used
+    pushw r4 sp
+    pushw r5 sp
 
-    ldw       r3 fp 12        # n = mem[fp + 12]
-    jnez      r3 factorialRec # if n != 0 jump to 16 (recursive step),
-                              # else fall through (base case)
+    ldw  r3 fp 12         # n = mem[fp + 12]
+    jnez r3 rec           # n != 0 -> recursive step (else fall through)
 
-    # Base case.
-    seti      rv 1            # output = 1
-    j         restore         # jump to restore
+    seti rv 1             # base case: rv = 1
+    j    restore
 
-# Recursive step.
-factorialRec:
-    copy      r5 r3           # r5 = n
-    inci      r5 -1           # n = n - 1
-    pushw     r5 sp           # mem[sp--] = n - 1
-    jsr       ra factorial    # (n-1)! = factorialRec(n-1)
-    inci      sp 4            # sp = sp + 4
-    muli      rv r3 rv        # n! = n(n-1)!
+rec:
+    copy r5 r3
+    inci r5 -1            # r5 = n - 1
+    pushw r5 sp           # mem[sp--] = n - 1
+    jsr  ra factorial     # rv = (n-1)!
+    inci sp 4             # sp = sp + 4
+    muli rv r3 rv         # rv = n * (n-1)!
 
 restore:
-    # Restore registers used.
-    popw      r5 sp           # r5 = mem[++sp]
-    popw      r4 sp           # r4 = mem[++sp]
-    popw      r3 sp           # r3 = mem[++sp]
+    popw r5 sp            # restore registers used
+    popw r4 sp
+    popw r3 sp
 
-    # Restore fp and ra, and jump to ra (caller).
-    popw      fp sp           # fp = mem[++sp]
-    popw      ra sp           # ra = mem[++sp]
-    jr        ra              # jump to caller
+    popw fp sp            # restore fp
+    popw ra sp            # restore ra
+    jr   ra               # return to caller

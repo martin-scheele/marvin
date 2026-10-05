@@ -1,0 +1,40 @@
+# Scalar loads and stores at all three widths. Copies values between
+# variables word by word, short by short, and pokes a single byte,
+# printing each result.
+# Exercises: ldw/stw, lds/sts, ldb/stb.
+
+.data
+.int src = 305419896    # 0x12345678
+.int dst = 0
+.short ssrc = 4660      # 0x1234
+.short sdst = 0
+
+.text
+main:
+    lda r1 src
+    ldw r2 r1 0        # r2 = src (whole word)
+    lda r3 dst
+    stw r2 r3 0        # dst = src
+    lda r1 dst
+    ldw r4 r1 0
+    writei r4          # 305419896
+
+    lda r1 src
+    lds r2 r1 0        # high short of src = 0x1234
+    writei r2          # 4660
+    lda r3 sdst
+    sts r2 r3 0
+    lda r1 sdst
+    lds r4 r1 0
+    writei r4          # 4660
+
+    lda r1 src
+    ldb r2 r1 1        # byte 1 of src = 0x34
+    writei r2          # 52
+    seti r5 171        # 0xAB
+    lda r3 dst
+    stb r5 r3 1        # poke 0xAB into byte 1 of dst
+    lda r1 dst
+    ldw r4 r1 0
+    writei r4          # 0x12AB5678 = 313218680
+    halt

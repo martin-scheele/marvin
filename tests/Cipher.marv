@@ -1,0 +1,47 @@
+# Caesar cipher. Pass a word as a command-line argument (type it into
+# the "command-line args" field); each letter shifts three positions
+# forward in the alphabet, wrapping past z. The result is built in a
+# short array, which writes prints as a string.
+# Exercises: anews/alds/asts/alen (short arrays).
+
+.data
+.string usage = "usage Cipher <word> (type the word into the command-line args field)\n"
+
+.text
+main:
+    lda r1 argc
+    lds r2 r1 0
+    seti r3 1
+    jlt r2 r3 noargs
+
+    lda r3 argv
+    seti r4 0
+    alds r3 r3 r4      # r3 = address of argv[0]
+    alen r4 r3         # r4 = word length
+
+    copy r5 gp         # r5 = the cipher array (bump-allocate via gp)
+    anews r5 r4        # length header + r4 zeroed shorts
+    seti r10 2
+    muli r6 r4 r10
+    inci r6 2          # bytes used: 2 (header) + 2*len
+    addi gp gp r6
+
+    seti r7 0          # i = 0
+shift:
+    jeq r7 r4 print
+    alds r6 r3 r7      # c = word[i]
+    inci r6 3
+    seti r8 122        # 'z'
+    jle r6 r8 store
+    inci r6 -26        # wrap around to the start of the alphabet
+store:
+    asts r6 r5 r7      # cipher[i] = shifted char
+    inci r7 1
+    j shift
+print:
+    writes r5
+    halt
+noargs:
+    lda r1 usage
+    writes r1
+    halt

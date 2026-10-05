@@ -1,0 +1,51 @@
+# Prints the sum 1 + 2 + ... + n, where n comes from the command-line
+# arguments: type a number into the "command-line args" field (e.g. 100),
+# press Assemble, then Run. argc/argv hold strings, so the program parses
+# the digits itself (atoi below): value = value*10 + (digit - '0').
+# Exercises: argc/argv strings, alds, jsr/jr (atoi).
+
+.data
+.string msg = "usage SumInts <n> (type n into the command-line args field)\n"
+
+.text
+main:
+    lda r1 argc
+    lds r2 r1 0        # r2 = argc
+    seti r3 1
+    jlt r2 r3 noargs   # argc < 1 -> usage message
+
+    lda r3 argv        # r3 = address of the argv array
+    seti r4 0
+    alds r3 r3 r4      # r3 = address of argv[0] (the "n" string)
+    jsr ra atoi        # rv = parsed n
+
+    seti r1 0          # sum = 0
+loop:
+    addi r1 r1 rv      # sum += n
+    inci rv -1         # n--
+    jnez rv loop
+    writei r1
+    halt
+
+noargs:
+    lda r1 msg
+    writes r1
+    halt
+
+# atoi: rv <- integer value of the decimal string at r3 (no spaces/sign)
+atoi:
+    lds r4 r3 0        # r4 = string length (short header)
+    seti rv 0          # value = 0
+    seti r5 0          # i = 0
+    seti r6 10
+    seti r7 48         # '0'
+next:
+    jeq r5 r4 done
+    alds r8 r3 r5      # r8 = code of char i (bounds-checked)
+    subi r8 r8 r7      # digit value = char - '0'
+    muli rv rv r6      # value *= 10
+    addi rv rv r8      # value += digit
+    inci r5 1
+    j next
+done:
+    jr ra

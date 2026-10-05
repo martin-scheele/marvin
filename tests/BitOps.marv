@@ -1,0 +1,40 @@
+# A tour of the bit-manipulation instructions. Prints the results of
+# and / or / xor / not, the four shifts, modi, and negi on the sample
+# values below; follow along in binary with the memory panel if you like.
+# Exercises: and/or/xor/not, the four shifts, modi, negi, nop.
+
+.text
+main:
+    seti r1 12         # 0b1100
+    seti r2 10         # 0b1010
+    nop                # does nothing
+
+    and  r3 r1 r2      # 12 & 10 = 8
+    writei r3
+    or   r3 r1 r2      # 12 | 10 = 14
+    writei r3
+    xor  r3 r1 r2      # 12 ^ 10 = 6
+    writei r3
+    not  r3 r1         # ~12: not leaves the register unmasked
+    writei r3          # (negative), so writei prints it as 4294967283
+
+    seti r4 2          # shift amount
+    lshl r3 r1 r4      # 12 << 2 = 48
+    writei r3
+    lshr r3 r1 r4      # 12 >> 2 = 3 (zeros in)
+    writei r3
+
+    seti r1 -16        # negative value: arithmetic shifts keep the sign
+    ashl r3 r1 r4      # -16 << 2 = -64
+    writei r3
+    ashr r3 r1 r4      # -16 >> 2 = -4
+    writei r3
+
+    seti r1 17
+    seti r2 5
+    modi r3 r1 r2      # 17 mod 5 = 2
+    writei r3
+
+    negi r3 r1         # -17
+    writei r3
+    halt

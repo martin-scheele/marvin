@@ -1,0 +1,30 @@
+# Reads floats from standard input until EOF, then prints their average.
+# Close stdin with Ctrl+D in the input box (or the EOF button): each read
+# then reports rv = 1 instead of waiting, with the destination register
+# left unchanged.
+# Exercises: readf, the rv = 1 EOF convention, addf/divf, writef.
+
+.data
+.string msg = "no numbers entered\n"
+
+.text
+main:
+    seti r1 0
+    i2f r2 r1        # r2 = sum = 0.0
+    seti r4 0        # r4 = count = 0
+loop:
+    readf r3         # next float; rv = 1 once input is exhausted
+    jnez rv done
+    addf r2 r2 r3    # sum += x
+    inci r4 1        # count++
+    j loop
+done:
+    jeqz r4 empty    # guard against division by zero
+    i2f r5 r4        # count as float
+    divf r2 r2 r5    # average = sum / count
+    writef r2
+    halt
+empty:
+    lda r1 msg
+    writes r1
+    halt

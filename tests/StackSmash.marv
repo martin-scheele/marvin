@@ -1,6 +1,0 @@
-.text
-    seti   r4 1
-loop:
-    pushw  r4 sp
-    j      loop
-    halt

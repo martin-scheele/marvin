@@ -1,0 +1,33 @@
+# Greets you by name. Type a name into the "command-line args" field,
+# press Assemble, then Run. The message is assembled from three string
+# pieces: "Hi, " + argv[0] + ". How are you?".
+# Exercises: argc/argv strings, writes.
+
+.data
+.string hi   = "Hi, "
+.string tail = ". How are you?\n"
+.string usage = "usage Greet <name> (type the name into the command-line args field)\n"
+
+.text
+main:
+    lda r1 argc
+    lds r2 r1 0        # r2 = argc
+    seti r3 1
+    jlt r2 r3 noargs   # argc < 1 -> usage message
+
+    lda r1 hi
+    writes r1          # "Hi, "
+
+    lda r3 argv        # r3 = address of the argv array
+    seti r4 0
+    alds r5 r3 r4      # r5 = address of argv[0]
+    writes r5          # the name
+
+    lda r1 tail
+    writes r1          # ". How are you?"
+    halt
+
+noargs:
+    lda r1 usage
+    writes r1
+    halt

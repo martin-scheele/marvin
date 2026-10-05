@@ -1,0 +1,23 @@
+# Echoes the command-line arguments: type them into the "command-line
+# args" field, press Assemble, then Run. They appear as argc (int) and
+# argv (array of string addresses).
+# Exercises: argc/argv, alds, writes/writec.
+
+.text
+main:
+    lda r1 argc
+    lds r2 r1 0        # r2 = argc
+    lda r3 argv        # r3 = address of the argv array
+    seti r4 0          # i = 0
+loop:
+    jeq r4 r2 done     # while i < argc
+    alds r5 r3 r4      # r5 = address of argv[i]
+    writes r5          # print argv[i]
+    seti r6 32
+    writec r6          # print a space
+    inci r4 1
+    j loop
+done:
+    seti r6 10
+    writec r6          # print a newline
+    halt
